@@ -9,7 +9,6 @@ class LLMService:
         if not key:
             raise ValueError("OpenAI API key is required")
 
-        # OpenRouter uses the OpenAI SDK, we just need to override the base_url
         client = openai.OpenAI(
             api_key=key,
             base_url="https://openrouter.ai/api/v1"
@@ -24,7 +23,7 @@ class LLMService:
         ]
 
         response = client.chat.completions.create(
-            model="openai/gpt-4o",  # OpenRouter model string format
+            model="openai/gpt-4o",
             messages=messages,
             temperature=0.7,
         )
