@@ -1,18 +1,20 @@
 import openai
+from langsmith import wrappers, traceable
 
 class LLMService:
     def __init__(self, api_key: str | None = None):
         self.default_api_key = api_key
 
+    @traceable(name="Generate LinkedIn Post")
     def generate_linkedin_post(self, transcript: str, prompt: str, api_key: str | None = None) -> str:
         key = api_key or self.default_api_key
         if not key:
             raise ValueError("OpenAI API key is required")
 
-        client = openai.OpenAI(
+        client = wrappers.wrap_openai(openai.OpenAI(
             api_key=key,
             base_url="https://openrouter.ai/api/v1"
-        )
+        ))
 
         # We construct the messages for the LLM
         # The user's prompt acts as the system instruction or user instruction
