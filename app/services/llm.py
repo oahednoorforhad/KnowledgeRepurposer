@@ -23,7 +23,7 @@ class LLMService:
         ]
 
         response = client.chat.completions.create(
-            model="openai/gpt-4o",
+            model="deepseek/deepseek-v4-flash:free",
             messages=messages,
             temperature=0.7,
         )
