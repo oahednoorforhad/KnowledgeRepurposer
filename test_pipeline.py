@@ -4,8 +4,11 @@ BASE_URL = "http://127.0.0.1:8000"
 
 def test_pipeline():
     print("⏳ Step 1: Fetching YouTube transcript...")
-    # Hits your existing scrape endpoint (which uses the hardcoded video ID)
-    scrape_response = requests.get(f"{BASE_URL}/api/scrape/youtube")
+    # Pass a YouTube URL to the scrape endpoint
+    scrape_response = requests.post(
+        f"{BASE_URL}/api/scrape/youtube",
+        json={"url": "https://www.youtube.com/watch?v=nWzXyjXCoCE"},
+    )
     
     if scrape_response.status_code != 200:
         print("❌ Failed to scrape transcript:", scrape_response.text)
@@ -20,6 +23,7 @@ def test_pipeline():
     # We only pass the transcript; it uses the default prompt and the API key from .env
     generate_response = requests.post(f"{BASE_URL}/api/generate/linkedin-post", json={
         "transcript": transcript_text
+        # creative_direction: "optional extra guidance can go here"
     })
     
     if generate_response.status_code != 200:

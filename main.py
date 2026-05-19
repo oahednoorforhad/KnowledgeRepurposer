@@ -4,13 +4,21 @@ from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
-from app.prompts import DEFAULT_LINKEDIN_PROMPT
+from fastapi.middleware.cors import CORSMiddleware
 from app.scrapers.youtube import YouTubeScraper
 from app.services.llm import LLMService
 
 load_dotenv()
 
 app = FastAPI(title="AI Knowledge-to-LinkedIn Content Engine")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 scraper = YouTubeScraper()
 llm_service = LLMService(api_key=os.getenv("OPENAI_API_KEY"))
@@ -29,7 +37,7 @@ class YouTubeTranscriptResponse(BaseModel):
 
 class GeneratePostRequest(BaseModel):
     transcript: str
-    prompt: str | None = DEFAULT_LINKEDIN_PROMPT
+    creative_direction: str | None = None  # Optional user guidance, appended to the transcript message
     api_key: str | None = None
 
 
@@ -37,13 +45,11 @@ class GeneratePostResponse(BaseModel):
     post: str
 
 
-HARDCODED_VIDEO_ID = "nWzXyjXCoCE"
-
-
-@app.get("/api/scrape/youtube", response_model=YouTubeTranscriptResponse)
-def scrape_youtube():
+@app.post("/api/scrape/youtube", response_model=YouTubeTranscriptResponse)
+def scrape_youtube(request: YouTubeUrlRequest):
     try:
-        result = scraper.get_transcript(HARDCODED_VIDEO_ID)
+        video_id = scraper.extract_video_id(request.url)
+        result = scraper.get_transcript(video_id)
         return YouTubeTranscriptResponse(
             video_id=result.video_id,
             title=result.title,
@@ -69,8 +75,8 @@ def generate_linkedin_post(request: GeneratePostRequest):
     try:
         post = llm_service.generate_linkedin_post(
             transcript=request.transcript,
-            prompt=request.prompt,
-            api_key=request.api_key
+            creative_direction=request.creative_direction,
+            api_key=request.api_key,
         )
         return GeneratePostResponse(post=post)
     except ValueError as e:
