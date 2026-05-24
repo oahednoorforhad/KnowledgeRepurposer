@@ -2,11 +2,13 @@
 
 # System Architecture
 
+# System Architecture
+
 ```mermaid
 flowchart TD
     subgraph Frontend[Frontend (React)]
         UI[UI Components]
-        Input[Input Toggle & Upload]
+        Input["Input Toggle & Upload"]
         Output[Post Preview]
     end
     subgraph Backend[Backend (FastAPI)]
@@ -22,6 +24,7 @@ flowchart TD
     API --> Output
     Output --> UI
 ```
+
 
 
 A sleek, **single‑page web app** that extracts insights from YouTube videos, articles, PDFs or Markdown files and generates premium LinkedIn‑ready posts using LLMs.
