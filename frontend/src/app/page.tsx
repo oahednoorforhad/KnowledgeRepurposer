@@ -10,6 +10,9 @@ import {
   Copy,
   Check,
   Zap,
+  FileUp,
+  Link2,
+  X,
 } from "lucide-react";
 
 // ── tiny utility ──────────────────────────────────────
@@ -72,15 +75,28 @@ function SkeletonBlock({ className }: { className?: string }) {
 
 // ── Main Page ─────────────────────────────────────────
 export default function Home() {
+  const [inputMode, setInputMode] = useState<"url" | "pdf">("url");
   const [url, setUrl] = useState("");
+  const [pdfFile, setPdfFile] = useState<File | null>(null);
   const [prompt, setPrompt] = useState("");
   const [loading, setLoading] = useState(false);
   const [post, setPost] = useState("");
   const [error, setError] = useState("");
 
+  const handleModeSwitch = (mode: "url" | "pdf") => {
+    setInputMode(mode);
+    setError("");
+    setUrl("");
+    setPdfFile(null);
+  };
+
   const handleGenerate = async () => {
-    if (!url) {
-      setError("Please paste a YouTube URL to continue.");
+    if (inputMode === "url" && !url) {
+      setError("Please paste a YouTube URL or article link to continue.");
+      return;
+    }
+    if (inputMode === "pdf" && !pdfFile) {
+      setError("Please select a PDF file to upload.");
       return;
     }
 
@@ -89,23 +105,38 @@ export default function Home() {
     setPost("");
 
     try {
-      const scrapeRes = await fetch("http://127.0.0.1:8000/api/scrape/youtube", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url }),
-      });
-      if (!scrapeRes.ok) {
-        const errData = await scrapeRes.json().catch(() => null);
-        throw new Error(errData?.detail || "Failed to extract transcript.");
-      }
+      let content: string;
 
-      const { transcript } = await scrapeRes.json();
+      if (inputMode === "pdf" && pdfFile) {
+        const formData = new FormData();
+        formData.append("file", pdfFile);
+        const scrapeRes = await fetch("http://127.0.0.1:8000/api/scrape/pdf-upload", {
+          method: "POST",
+          body: formData,
+        });
+        if (!scrapeRes.ok) {
+          const errData = await scrapeRes.json().catch(() => null);
+          throw new Error(errData?.detail || "Failed to extract text from the PDF.");
+        }
+        ({ content } = await scrapeRes.json());
+      } else {
+        const scrapeRes = await fetch("http://127.0.0.1:8000/api/scrape", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ url }),
+        });
+        if (!scrapeRes.ok) {
+          const errData = await scrapeRes.json().catch(() => null);
+          throw new Error(errData?.detail || "Failed to extract source content.");
+        }
+        ({ content } = await scrapeRes.json());
+      }
 
       const generateRes = await fetch("http://127.0.0.1:8000/api/generate/linkedin-post", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          transcript,
+          transcript: content,
           ...(prompt ? { creative_direction: prompt } : {}),
         }),
       });
@@ -151,7 +182,7 @@ export default function Home() {
           className="text-[clamp(2.4rem,6vw,4.2rem)] font-semibold tracking-[-0.04em] text-white leading-[1.05]"
           style={{ letterSpacing: "-0.04em" }}
         >
-          YouTube to{" "}
+          Source to{" "}
           <span
             className="inline-block"
             style={{
@@ -166,7 +197,7 @@ export default function Home() {
         </h1>
 
         <p className="text-[15px] text-white/40 max-w-lg mx-auto font-light leading-relaxed tracking-[-0.01em]">
-          Paste any YouTube URL. Our AI distills the key insights into a premium, ready-to-publish post.
+          Paste any YouTube URL or article link. Our AI distills the key insights into a premium, ready-to-publish post.
         </p>
       </header>
 
@@ -176,29 +207,110 @@ export default function Home() {
         {/* ── Input panel ─────────────────────────────── */}
         <GlassCard className="p-6 flex flex-col gap-6">
 
-          {/* URL field */}
-          <div className="flex flex-col gap-2.5">
-            <Label>Source URL</Label>
-            <div className="relative">
-              <div className="absolute left-3.5 top-1/2 -translate-y-1/2">
-                <PlaySquare className="w-4 h-4 text-white/25" />
+          {/* Input mode toggle */}
+          <div className="flex gap-1.5 p-1 rounded-xl bg-white/[0.04] border border-white/[0.07]">
+            <button
+              id="mode-url"
+              onClick={() => handleModeSwitch("url")}
+              className={cn(
+                "flex-1 flex items-center justify-center gap-1.5 h-8 rounded-lg text-[12px] font-medium transition-all duration-200",
+                inputMode === "url"
+                  ? "bg-white/10 text-white shadow-sm"
+                  : "text-white/35 hover:text-white/60"
+              )}
+            >
+              <Link2 className="w-3.5 h-3.5" />
+              URL / Link
+            </button>
+            <button
+              id="mode-pdf"
+              onClick={() => handleModeSwitch("pdf")}
+              className={cn(
+                "flex-1 flex items-center justify-center gap-1.5 h-8 rounded-lg text-[12px] font-medium transition-all duration-200",
+                inputMode === "pdf"
+                  ? "bg-white/10 text-white shadow-sm"
+                  : "text-white/35 hover:text-white/60"
+              )}
+            >
+              <FileUp className="w-3.5 h-3.5" />
+              Upload PDF
+            </button>
+          </div>
+
+          {/* Source input */}
+          {inputMode === "url" ? (
+            <div className="flex flex-col gap-2.5">
+              <Label>Source URL</Label>
+              <div className="relative">
+                <div className="absolute left-3.5 top-1/2 -translate-y-1/2">
+                  <PlaySquare className="w-4 h-4 text-white/25" />
+                </div>
+                <input
+                  id="source-url"
+                  type="url"
+                  placeholder="https://youtube.com/... or https://example.com/article"
+                  className={cn(
+                    "w-full h-11 pl-10 pr-4 rounded-xl text-[13.5px] font-light text-white placeholder-white/20",
+                    "bg-white/5 border transition-all duration-200 outline-none",
+                    "border-white/8 focus:border-white/20 focus:bg-white/8",
+                    "focus:ring-2 focus:ring-[oklch(0.62_0.22_255_/_20%)]"
+                  )}
+                  value={url}
+                  onChange={(e) => setUrl(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && handleGenerate()}
+                />
               </div>
-              <input
-                id="youtube-url"
-                type="url"
-                placeholder="https://youtube.com/watch?v=..."
+            </div>
+          ) : (
+            <div className="flex flex-col gap-2.5">
+              <Label>PDF File</Label>
+              <label
+                id="pdf-upload-label"
+                htmlFor="pdf-file-input"
                 className={cn(
-                  "w-full h-11 pl-10 pr-4 rounded-xl text-[13.5px] font-light text-white placeholder-white/20",
-                  "bg-white/5 border transition-all duration-200 outline-none",
-                  "border-white/8 focus:border-white/20 focus:bg-white/8",
-                  "focus:ring-2 focus:ring-[oklch(0.62_0.22_255_/_20%)]"
+                  "flex flex-col items-center justify-center gap-2 w-full rounded-xl border-2 border-dashed",
+                  "transition-all duration-200 cursor-pointer select-none",
+                  pdfFile
+                    ? "border-[oklch(0.62_0.22_255_/_40%)] bg-[oklch(0.62_0.22_255_/_6%)]"
+                    : "border-white/10 bg-white/[0.03] hover:border-white/20 hover:bg-white/[0.05]",
+                  "py-5"
                 )}
-                value={url}
-                onChange={(e) => setUrl(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && handleGenerate()}
+              >
+                {pdfFile ? (
+                  <div className="flex items-center gap-2 px-4">
+                    <FileUp className="w-4 h-4 text-[oklch(0.72_0.18_255)] shrink-0" />
+                    <span className="text-[13px] text-white/80 font-light truncate max-w-[160px]">{pdfFile.name}</span>
+                    <button
+                      type="button"
+                      onClick={(e) => { e.preventDefault(); setPdfFile(null); }}
+                      className="ml-1 text-white/30 hover:text-white/60 transition-colors"
+                      title="Remove file"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                ) : (
+                  <>
+                    <FileUp className="w-5 h-5 text-white/20" />
+                    <span className="text-[12.5px] text-white/30 font-light">
+                      Click to browse or drop a <span className="text-white/50">.pdf</span> file
+                    </span>
+                  </>
+                )}
+              </label>
+              <input
+                id="pdf-file-input"
+                type="file"
+                accept=".pdf,application/pdf"
+                className="hidden"
+                onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  if (f) setPdfFile(f);
+                  e.target.value = "";
+                }}
               />
             </div>
-          </div>
+          )}
 
           {/* Prompt override */}
           <div className="flex flex-col gap-2.5 flex-1">
@@ -308,7 +420,7 @@ export default function Home() {
                     Paste a URL and hit <strong className="text-white/35 font-medium">Generate Post</strong>
                   </p>
                   <p className="text-[12px] text-white/15 mt-1">
-                    Supports any public YouTube video
+                    Supports public YouTube videos and articles
                   </p>
                 </div>
               </div>

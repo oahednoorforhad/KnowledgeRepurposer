@@ -3,7 +3,7 @@ name = "poster"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
-requires-python = ">=3.14"
+requires-python = ">=3.13"
 dependencies = [
     "fastapi>=0.136.1",
     "langsmith>=0.8.5",
@@ -14,4 +14,9 @@ dependencies = [
     "uvicorn>=0.47.0",
     "youtube-transcript-api>=1.2.4",
     "yt-dlp>=2024.0.0",
+    "html-to-markdown==3.3.2",
+    "requests>=2.31.0",
+    "pypdf>=5.0.0",
+    "python-multipart>=0.0.29",
 ]
+
