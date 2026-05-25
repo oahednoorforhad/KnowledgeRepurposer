@@ -1,37 +1,27 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
+import { useRouter } from "next/navigation";
 import ReactMarkdown from "react-markdown";
 import {
-  Sparkles,
-  ArrowRight,
-  Loader2,
-  PlaySquare,
-  Copy,
-  Check,
-  Zap,
-  FileUp,
-  Link2,
-  X,
+  Sparkles, ArrowRight, Loader2, PlaySquare, Copy, Check, Zap, FileUp, Link2, X, Settings, Clock,
 } from "lucide-react";
+import { getToken, authHeaders } from "@/lib/auth";
+import SettingsDrawer from "@/components/SettingsDrawer";
+import HistorySidebar from "@/components/HistorySidebar";
 
-// ── tiny utility ──────────────────────────────────────
 function cn(...classes: (string | undefined | false)[]) {
   return classes.filter(Boolean).join(" ");
 }
 
-// ── reusable primitives ───────────────────────────────
 function Label({ children, className }: { children: React.ReactNode; className?: string }) {
   return <p className={cn("label-caps", className)}>{children}</p>;
 }
 
 function GlassCard({ children, className }: { children: React.ReactNode; className?: string }) {
-  return (
-    <div className={cn("glass rounded-2xl", className)}>{children}</div>
-  );
+  return <div className={cn("glass rounded-2xl", className)}>{children}</div>;
 }
 
-// ── Copy-to-clipboard button ──────────────────────────
 function CopyButton({ text }: { text: string }) {
   const [copied, setCopied] = useState(false);
   const handleCopy = async () => {
@@ -50,16 +40,11 @@ function CopyButton({ text }: { text: string }) {
           : "bg-white/5 text-white/50 border border-white/10 hover:bg-white/10 hover:text-white/80"
       )}
     >
-      {copied ? (
-        <><Check className="w-3.5 h-3.5" /> Copied</>
-      ) : (
-        <><Copy className="w-3.5 h-3.5" /> Copy</>
-      )}
+      {copied ? <><Check className="w-3.5 h-3.5" /> Copied</> : <><Copy className="w-3.5 h-3.5" /> Copy</>}
     </button>
   );
 }
 
-// ── Skeleton pulse ─────────────────────────────────────
 function SkeletonBlock({ className }: { className?: string }) {
   return (
     <div
@@ -73,8 +58,9 @@ function SkeletonBlock({ className }: { className?: string }) {
   );
 }
 
-// ── Main Page ─────────────────────────────────────────
 export default function Home() {
+  const router = useRouter();
+  const [ready, setReady] = useState(false);
   const [inputMode, setInputMode] = useState<"url" | "pdf">("url");
   const [url, setUrl] = useState("");
   const [pdfFile, setPdfFile] = useState<File | null>(null);
@@ -82,6 +68,25 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [post, setPost] = useState("");
   const [error, setError] = useState("");
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [refreshHistory, setRefreshHistory] = useState(0);
+  const [profileComplete, setProfileComplete] = useState(false);
+
+  useEffect(() => {
+    const token = getToken();
+    if (!token) {
+      router.replace("/login");
+      return;
+    }
+    fetch("http://127.0.0.1:8000/profile", { headers: authHeaders() })
+      .then((r) => r.json())
+      .then((data) => {
+        if (data && data.name) setProfileComplete(true);
+      })
+      .catch(() => {})
+      .finally(() => setReady(true));
+  }, [router]);
 
   const handleModeSwitch = (mode: "url" | "pdf") => {
     setInputMode(mode);
@@ -99,6 +104,10 @@ export default function Home() {
       setError("Please select a PDF file to upload.");
       return;
     }
+    if (!profileComplete) {
+      setError("Please complete your profile (Settings -> enter a name) before generating.");
+      return;
+    }
 
     setError("");
     setLoading(true);
@@ -106,37 +115,46 @@ export default function Home() {
 
     try {
       let content: string;
+      let sourceUrl: string | null = null;
+      let sourceType: string | null = null;
 
       if (inputMode === "pdf" && pdfFile) {
         const formData = new FormData();
         formData.append("file", pdfFile);
         const scrapeRes = await fetch("http://127.0.0.1:8000/api/scrape/pdf-upload", {
-          method: "POST",
-          body: formData,
+          method: "POST", headers: authHeaders(), body: formData,
         });
         if (!scrapeRes.ok) {
           const errData = await scrapeRes.json().catch(() => null);
           throw new Error(errData?.detail || "Failed to extract text from the PDF.");
         }
-        ({ content } = await scrapeRes.json());
+        const scrapeData = await scrapeRes.json();
+        content = scrapeData.content;
+        sourceUrl = scrapeData.metadata?.filename || null;
+        sourceType = "pdf";
       } else {
         const scrapeRes = await fetch("http://127.0.0.1:8000/api/scrape", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: { "Content-Type": "application/json", ...authHeaders() },
           body: JSON.stringify({ url }),
         });
         if (!scrapeRes.ok) {
           const errData = await scrapeRes.json().catch(() => null);
           throw new Error(errData?.detail || "Failed to extract source content.");
         }
-        ({ content } = await scrapeRes.json());
+        const scrapeData = await scrapeRes.json();
+        content = scrapeData.content;
+        sourceUrl = url;
+        sourceType = scrapeData.source_type;
       }
 
       const generateRes = await fetch("http://127.0.0.1:8000/api/generate/linkedin-post", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...authHeaders() },
         body: JSON.stringify({
           transcript: content,
+          source_url: sourceUrl,
+          source_type: sourceType,
           ...(prompt ? { creative_direction: prompt } : {}),
         }),
       });
@@ -148,6 +166,7 @@ export default function Home() {
 
       const data = await generateRes.json();
       setPost(data.post);
+      if (data.generation_id) setRefreshHistory((n) => n + 1);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : "An unexpected error occurred.";
       setError(message);
@@ -156,67 +175,75 @@ export default function Home() {
     }
   };
 
+  const handleSettingsSaved = useCallback(() => {
+    setProfileComplete(true);
+  }, []);
+
+  if (!ready) {
+    return <div className="min-h-screen flex items-center justify-center"><Loader2 className="w-5 h-5 animate-spin text-white/40" /></div>;
+  }
+
   return (
     <main className="min-h-screen w-full relative flex flex-col items-center pt-20 pb-16 px-5 overflow-hidden">
-
-      {/* ── Ambient orbs ───────────────────────────────── */}
-      <div
-        aria-hidden
-        className="absolute top-[-15%] left-[-8%] w-[55%] h-[55%] rounded-full pointer-events-none"
+      <div aria-hidden className="absolute top-[-15%] left-[-8%] w-[55%] h-[55%] rounded-full pointer-events-none"
         style={{ background: "radial-gradient(circle, oklch(0.55 0.22 255 / 0.13) 0%, transparent 70%)", filter: "blur(80px)" }}
       />
-      <div
-        aria-hidden
-        className="absolute bottom-[-15%] right-[-8%] w-[45%] h-[50%] rounded-full pointer-events-none"
+      <div aria-hidden className="absolute bottom-[-15%] right-[-8%] w-[45%] h-[50%] rounded-full pointer-events-none"
         style={{ background: "radial-gradient(circle, oklch(0.50 0.18 280 / 0.10) 0%, transparent 70%)", filter: "blur(80px)" }}
       />
 
-      {/* ── Hero ───────────────────────────────────────── */}
-      <header className="w-full max-w-4xl text-center space-y-5 mb-14 relative z-10">
-        <div className="chip mx-auto w-fit mb-2">
+      <header className="w-full max-w-4xl flex items-center justify-between mb-6 relative z-10">
+        <div className="chip">
           <Zap className="w-3 h-3" />
           AI Content Engine
         </div>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setHistoryOpen(true)}
+            title="History"
+            className="p-2 rounded-xl bg-white/5 border border-white/10 text-white/40 hover:text-white/80 hover:bg-white/10 transition-all"
+          >
+            <Clock className="w-4 h-4" />
+          </button>
+          <button
+            onClick={() => setSettingsOpen(true)}
+            title="Settings"
+            className="p-2 rounded-xl bg-white/5 border border-white/10 text-white/40 hover:text-white/80 hover:bg-white/10 transition-all"
+          >
+            <Settings className="w-4 h-4" />
+          </button>
+        </div>
+      </header>
 
+      <header className="w-full max-w-4xl text-center space-y-5 mb-14 relative z-10">
         <h1
           className="text-[clamp(2.4rem,6vw,4.2rem)] font-semibold tracking-[-0.04em] text-white leading-[1.05]"
           style={{ letterSpacing: "-0.04em" }}
         >
           Source to{" "}
-          <span
-            className="inline-block"
+          <span className="inline-block"
             style={{
               background: "linear-gradient(135deg, oklch(0.72 0.18 255) 0%, oklch(0.65 0.22 280) 100%)",
-              WebkitBackgroundClip: "text",
-              WebkitTextFillColor: "transparent",
-              backgroundClip: "text",
+              WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text",
             }}
           >
             LinkedIn Post
           </span>
         </h1>
-
         <p className="text-[15px] text-white/40 max-w-lg mx-auto font-light leading-relaxed tracking-[-0.01em]">
           Paste any YouTube URL or article link. Our AI distills the key insights into a premium, ready-to-publish post.
         </p>
       </header>
 
-      {/* ── Main grid ──────────────────────────────────── */}
       <div className="w-full max-w-5xl grid grid-cols-1 lg:grid-cols-[2fr_3fr] gap-5 relative z-10">
-
-        {/* ── Input panel ─────────────────────────────── */}
         <GlassCard className="p-6 flex flex-col gap-6">
-
-          {/* Input mode toggle */}
           <div className="flex gap-1.5 p-1 rounded-xl bg-white/[0.04] border border-white/[0.07]">
             <button
               id="mode-url"
               onClick={() => handleModeSwitch("url")}
               className={cn(
                 "flex-1 flex items-center justify-center gap-1.5 h-8 rounded-lg text-[12px] font-medium transition-all duration-200",
-                inputMode === "url"
-                  ? "bg-white/10 text-white shadow-sm"
-                  : "text-white/35 hover:text-white/60"
+                inputMode === "url" ? "bg-white/10 text-white shadow-sm" : "text-white/35 hover:text-white/60"
               )}
             >
               <Link2 className="w-3.5 h-3.5" />
@@ -227,9 +254,7 @@ export default function Home() {
               onClick={() => handleModeSwitch("pdf")}
               className={cn(
                 "flex-1 flex items-center justify-center gap-1.5 h-8 rounded-lg text-[12px] font-medium transition-all duration-200",
-                inputMode === "pdf"
-                  ? "bg-white/10 text-white shadow-sm"
-                  : "text-white/35 hover:text-white/60"
+                inputMode === "pdf" ? "bg-white/10 text-white shadow-sm" : "text-white/35 hover:text-white/60"
               )}
             >
               <FileUp className="w-3.5 h-3.5" />
@@ -237,7 +262,6 @@ export default function Home() {
             </button>
           </div>
 
-          {/* Source input */}
           {inputMode === "url" ? (
             <div className="flex flex-col gap-2.5">
               <Label>Source URL</Label>
@@ -268,8 +292,7 @@ export default function Home() {
                 id="pdf-upload-label"
                 htmlFor="pdf-file-input"
                 className={cn(
-                  "flex flex-col items-center justify-center gap-2 w-full rounded-xl border-2 border-dashed",
-                  "transition-all duration-200 cursor-pointer select-none",
+                  "flex flex-col items-center justify-center gap-2 w-full rounded-xl border-2 border-dashed transition-all duration-200 cursor-pointer select-none",
                   pdfFile
                     ? "border-[oklch(0.62_0.22_255_/_40%)] bg-[oklch(0.62_0.22_255_/_6%)]"
                     : "border-white/10 bg-white/[0.03] hover:border-white/20 hover:bg-white/[0.05]",
@@ -280,11 +303,8 @@ export default function Home() {
                   <div className="flex items-center gap-2 px-4">
                     <FileUp className="w-4 h-4 text-[oklch(0.72_0.18_255)] shrink-0" />
                     <span className="text-[13px] text-white/80 font-light truncate max-w-[160px]">{pdfFile.name}</span>
-                    <button
-                      type="button"
-                      onClick={(e) => { e.preventDefault(); setPdfFile(null); }}
-                      className="ml-1 text-white/30 hover:text-white/60 transition-colors"
-                      title="Remove file"
+                    <button type="button" onClick={(e) => { e.preventDefault(); setPdfFile(null); }}
+                      className="ml-1 text-white/30 hover:text-white/60 transition-colors" title="Remove file"
                     >
                       <X className="w-3.5 h-3.5" />
                     </button>
@@ -298,21 +318,12 @@ export default function Home() {
                   </>
                 )}
               </label>
-              <input
-                id="pdf-file-input"
-                type="file"
-                accept=".pdf,application/pdf"
-                className="hidden"
-                onChange={(e) => {
-                  const f = e.target.files?.[0];
-                  if (f) setPdfFile(f);
-                  e.target.value = "";
-                }}
+              <input id="pdf-file-input" type="file" accept=".pdf,application/pdf" className="hidden"
+                onChange={(e) => { const f = e.target.files?.[0]; if (f) setPdfFile(f); e.target.value = ""; }}
               />
             </div>
           )}
 
-          {/* Prompt override */}
           <div className="flex flex-col gap-2.5 flex-1">
             <div className="flex items-center justify-between">
               <Label>Creative Direction</Label>
@@ -333,14 +344,12 @@ export default function Home() {
             />
           </div>
 
-          {/* Error */}
           {error && (
             <div className="flex items-start gap-2.5 p-3 rounded-xl bg-red-500/8 border border-red-500/20">
               <span className="text-red-400 text-[13px] font-light leading-relaxed">{error}</span>
             </div>
           )}
 
-          {/* Generate button */}
           <button
             id="generate-btn"
             onClick={handleGenerate}
@@ -354,22 +363,14 @@ export default function Home() {
             )}
           >
             {loading ? (
-              <>
-                <Loader2 className="w-4 h-4 animate-spin" />
-                Synthesizing post…
-              </>
+              <><Loader2 className="w-4 h-4 animate-spin" /> Synthesizing post…</>
             ) : (
-              <>
-                Generate Post
-                <ArrowRight className="w-4 h-4" />
-              </>
+              <>Generate Post <ArrowRight className="w-4 h-4" /></>
             )}
           </button>
         </GlassCard>
 
-        {/* ── Output panel ────────────────────────────── */}
         <GlassCard className="flex flex-col min-h-[460px]">
-          {/* Panel header */}
           <div className="flex items-center justify-between px-6 pt-5 pb-4 border-b border-white/[0.06]">
             <div className="flex items-center gap-2">
               <Sparkles className="w-3.5 h-3.5 text-[oklch(0.72_0.18_255)]" />
@@ -378,10 +379,8 @@ export default function Home() {
             {post && <CopyButton text={post} />}
           </div>
 
-          {/* Panel body */}
           <div className="flex-1 px-6 py-5 overflow-y-auto">
             {loading ? (
-              /* Skeleton */
               <div className="flex flex-col gap-3 pt-1">
                 <SkeletonBlock className="h-3.5 w-2/3" />
                 <SkeletonBlock className="h-3 w-5/6" />
@@ -399,19 +398,13 @@ export default function Home() {
                 <SkeletonBlock className="h-3 w-2/3" />
               </div>
             ) : post ? (
-              /* Markdown output */
               <div className="md-output">
                 <ReactMarkdown>{post}</ReactMarkdown>
               </div>
             ) : (
-              /* Empty state */
               <div className="flex flex-col items-center justify-center h-full min-h-[300px] gap-4 select-none">
-                <div
-                  className="w-12 h-12 rounded-2xl flex items-center justify-center"
-                  style={{
-                    background: "oklch(0.62 0.22 255 / 8%)",
-                    border: "1px solid oklch(0.62 0.22 255 / 20%)",
-                  }}
+                <div className="w-12 h-12 rounded-2xl flex items-center justify-center"
+                  style={{ background: "oklch(0.62 0.22 255 / 8%)", border: "1px solid oklch(0.62 0.22 255 / 20%)" }}
                 >
                   <Sparkles className="w-5 h-5 text-[oklch(0.65_0.18_255_/_60%)]" />
                 </div>
@@ -419,9 +412,7 @@ export default function Home() {
                   <p className="text-[13px] text-white/25 font-light">
                     Paste a URL and hit <strong className="text-white/35 font-medium">Generate Post</strong>
                   </p>
-                  <p className="text-[12px] text-white/15 mt-1">
-                    Supports public YouTube videos and articles
-                  </p>
+                  <p className="text-[12px] text-white/15 mt-1">Supports public YouTube videos and articles</p>
                 </div>
               </div>
             )}
@@ -429,13 +420,22 @@ export default function Home() {
         </GlassCard>
       </div>
 
-      {/* ── Footer ─────────────────────────────────────── */}
       <footer className="mt-14 text-center relative z-10">
         <p className="text-[11px] text-white/15 tracking-wide font-light">
           Powered by OpenRouter · LangSmith observability · FastAPI
         </p>
       </footer>
 
+      <SettingsDrawer open={settingsOpen} onClose={() => setSettingsOpen(false)} onSaved={handleSettingsSaved} />
+      <HistorySidebar
+        open={historyOpen}
+        onClose={() => setHistoryOpen(false)}
+        onSelect={(gen) => {
+          setPost(gen.generated_post);
+          if (gen.source_url) setUrl(gen.source_url);
+        }}
+        refreshKey={refreshHistory}
+      />
     </main>
   );
 }

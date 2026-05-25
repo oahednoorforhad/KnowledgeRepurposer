@@ -1,7 +1,7 @@
 import openai
 from langsmith import wrappers, traceable
 
-from app.prompts import DEFAULT_LINKEDIN_PROMPT
+from app.prompts import build_prompt
 
 # Primary: NVIDIA Nemotron 3 Super 120B (1M ctx, 120B params) — confirmed live.
 # Fallback: GPT-OSS 120B (131K ctx, GPT-class quality) — confirmed live.
@@ -19,7 +19,8 @@ class LLMService:
         transcript: str,
         creative_direction: str | None = None,
         api_key: str | None = None,
-    ) -> str:
+        profile: dict | None = None,
+    ) -> tuple[str, str]:
         key = api_key or self.default_api_key
         if not key:
             raise ValueError("OpenAI API key is required")
@@ -29,11 +30,7 @@ class LLMService:
             base_url="https://openrouter.ai/api/v1"
         ))
 
-        # ── System prompt ───────────────────────────────────────────────────
-        # DEFAULT_LINKEDIN_PROMPT contains the full persona, writing rules,
-        # examples, and formatting constraints for Oahed Noor Forhad.
-        # This is the authoritative instruction layer. It is NEVER overwritten.
-        system_content = DEFAULT_LINKEDIN_PROMPT
+        system_content = build_prompt(profile)
 
         # ── User message ────────────────────────────────────────────────────
         # Contains the raw transcript the model must transform.
@@ -68,17 +65,13 @@ class LLMService:
                 try:
                     content = response.choices[0].message.content
                 except (IndexError, AttributeError, TypeError):
-                    # Malformed response (empty choices, None message, etc.) — try next.
                     continue
                 if not content or not content.strip():
-                    # Empty generation — try next.
                     continue
-                return content
+                return content, model
             except (openai.NotFoundError, openai.RateLimitError, openai.BadRequestError):
-                # Model unavailable, rate-limited, or request rejected — try next.
                 continue
 
-        # If both failed, surface a clear error.
         raise RuntimeError(
             "All models are currently unavailable or rate-limited. "
             "Please retry in a moment."
