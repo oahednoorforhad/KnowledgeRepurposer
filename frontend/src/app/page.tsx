@@ -6,7 +6,7 @@ import ReactMarkdown from "react-markdown";
 import {
   Sparkles, ArrowRight, Loader2, PlaySquare, Copy, Check, Zap, FileUp, Link2, X, Settings, Clock,
 } from "lucide-react";
-import { getToken, authHeaders } from "@/lib/auth";
+import { getToken, authHeaders, clearToken } from "@/lib/auth";
 import SettingsDrawer from "@/components/SettingsDrawer";
 import HistorySidebar from "@/components/HistorySidebar";
 
@@ -178,6 +178,20 @@ export default function Home() {
   const handleSettingsSaved = useCallback(() => {
     setProfileComplete(true);
   }, []);
+
+  const handleLogout = async () => {
+    try {
+      await fetch("http://127.0.0.1:8000/auth/logout", {
+        method: "POST",
+        headers: authHeaders(),
+      });
+    } catch {
+      // Backend failure does not block client-side logout
+    } finally {
+      clearToken();
+      router.replace("/login");
+    }
+  };
 
   if (!ready) {
     return <div className="min-h-screen flex items-center justify-center"><Loader2 className="w-5 h-5 animate-spin text-white/40" /></div>;
@@ -426,7 +440,7 @@ export default function Home() {
         </p>
       </footer>
 
-      <SettingsDrawer open={settingsOpen} onClose={() => setSettingsOpen(false)} onSaved={handleSettingsSaved} />
+      <SettingsDrawer open={settingsOpen} onClose={() => setSettingsOpen(false)} onSaved={handleSettingsSaved} onLogout={handleLogout} />
       <HistorySidebar
         open={historyOpen}
         onClose={() => setHistoryOpen(false)}

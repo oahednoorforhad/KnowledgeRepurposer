@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { X, Save, Loader2 } from "lucide-react";
+import { X, Save, Loader2, LogOut } from "lucide-react";
 import { authHeaders } from "@/lib/auth";
 
 interface Profile {
@@ -17,14 +17,16 @@ interface Props {
   open: boolean;
   onClose: () => void;
   onSaved: (profile: Profile) => void;
+  onLogout: () => void;
 }
 
-export default function SettingsDrawer({ open, onClose, onSaved }: Props) {
+export default function SettingsDrawer({ open, onClose, onSaved, onLogout }: Props) {
   const [form, setForm] = useState<Profile>({
     name: "", job_title: "", niche: "", tone: "", linkedin_headline: "", bio: "",
   });
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [loggingOut, setLoggingOut] = useState(false);
 
   useEffect(() => {
     if (!open) return;
@@ -115,6 +117,16 @@ export default function SettingsDrawer({ open, onClose, onSaved }: Props) {
             >
               {saving ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Saving...</>
                 : <><Save className="w-3.5 h-3.5" /> Save Profile</>}
+            </button>
+
+            <hr className="border-white/10 my-4" />
+            <button
+              onClick={() => { setLoggingOut(true); onLogout(); }}
+              disabled={loggingOut || saving}
+              className="w-full h-9 rounded-xl flex items-center justify-center gap-2 text-[13px] font-semibold text-red-400 border border-red-400/20 hover:bg-red-500/10 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+            >
+              {loggingOut ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Logging out…</>
+                : <><LogOut className="w-3.5 h-3.5" /> Log out</>}
             </button>
           </div>
         )}

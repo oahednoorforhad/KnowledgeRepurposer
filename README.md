@@ -1,131 +1,168 @@
 # AI Knowledge-to-LinkedIn Content Engine
 
-# System Architecture
-
-# System Architecture
+A **single-page web app** that extracts insights from YouTube videos, articles, PDFs, or Markdown files and generates premium LinkedIn-ready posts using LLMs via [OpenRouter](https://openrouter.ai/).
 
 ```mermaid
-flowchart TD
-    subgraph Frontend[Frontend (React)]
+flowchart LR
+    subgraph FE["Frontend (Next.js :3000)"]
         UI[UI Components]
-        Input["Input Toggle & Upload"]
+        Input[Input / PDF Upload]
         Output[Post Preview]
     end
-    subgraph Backend[Backend (FastAPI)]
+
+    subgraph BE["Backend (FastAPI :8000)"]
         API[API Endpoints]
         Scraper[Scrapers]
         LLM[LLM Service]
     end
-    UI --> Input
-    Input --> API
-    API --> Scraper
-    Scraper --> LLM
-    LLM --> API
-    API --> Output
-    Output --> UI
+
+    DB[(PostgreSQL)]
+
+    UI --> Input --> API
+    API --> Scraper --> LLM --> API
+    API --> DB
+    API --> Output --> UI
 ```
-
-
-
-A sleek, **single‑page web app** that extracts insights from YouTube videos, articles, PDFs or Markdown files and generates premium LinkedIn‑ready posts using LLMs.
 
 ---
 
 ## ✨ Features
-- **Source flexibility** – paste a URL or upload a local PDF.
-- **Fast extraction** – uses `pypdf` for PDFs, `newspaper3k` for articles, and custom YouTube transcript handling.
-- **AI‑powered writing** – powered by OpenAI (or any compatible LLM service).
-- **Modern UI** – glass‑morphism cards, dark theme, micro‑animations.
-- **Docker‑ready** – backend (FastAPI) and frontend (Next.js) can be containerised.
+
+- **Source flexibility** — paste a YouTube URL, article URL, PDF URL, or upload a local PDF
+- **Fast extraction** — `pypdf` for PDFs, `newspaper3k` for articles, custom YouTube transcript handling
+- **AI-powered writing** — powered by OpenRouter (NVIDIA Nemotron 120B primary, GPT-OSS 120B fallback)
+- **Retry logic** — automatic exponential backoff on transient LLM errors
+- **Input guards** — PDF uploads capped at 10MB, transcripts capped at 8,000 tokens pre-LLM
+- **Rate limiting** — 20 generations/hour per user (in-memory)
+- **Token tracking** — input/output token counts stored per generation in DB
+- **Request logging** — every HTTP request logged with method, path, status, duration via loguru
+- **Auth** — JWT-based user authentication with profile support
+- **Modern UI** — glass-morphism cards, dark theme, micro-animations
 
 ---
 
 ## 🛠️ Tech Stack
+
 | Layer | Tech |
 |-------|------|
-| Backend | **FastAPI** (Python) – `uvicorn` hot‑reload |
+| Backend | **FastAPI** (Python 3.13) — `uvicorn` |
+| Database | **PostgreSQL 16** — `asyncpg` |
 | Scrapers | `pypdf`, `requests`, `newspaper3k`, custom YouTube logic |
-| LLM Service | Wrapper around OpenAI/compatible API |
-| Frontend | **React** + **Tailwind‑CSS** (via Next.js) |
-| Packaging | `npm` for the UI, `uv` for the Python env |
+| LLM Service | OpenRouter via `openai` SDK — `tenacity` retry, `tiktoken` token counting |
+| Logging | `loguru` — request middleware + structured logs |
+| Frontend | **Next.js** + **Tailwind CSS** |
+| Packaging | `uv` for Python, `npm` for the UI |
 
 ---
 
-## 📦 Getting Started (Development)
-### Prerequisites
-- **Python 3.11+** and **uv** (or pip)
-- **Node.js 20+** and **npm**
-- An OpenAI (or compatible) API key
+## 📦 Getting Started (Local Dev)
 
-### Backend
+### Prerequisites
+- **Python 3.13+** and **uv**
+- **Node.js 20+** and **npm**
+- **PostgreSQL** running locally
+- An [OpenRouter](https://openrouter.ai/) API key
+
+### 1. Environment
+
 ```bash
-# Clone the repo (already done)
-cd e:/All About CSE/Oahed.ai/poster
-# Install deps (using uv for fast env creation)
-uv pip install -r requirements.txt
-# Create a .env file
 cp .env.example .env
-# Fill OPENAI_API_KEY in .env
-uv run uvicorn main:app --reload   # runs on http://127.0.0.1:8000
+# Edit .env — set OPENAI_API_KEY, JWT_SECRET, DATABASE_URL
 ```
 
-### Frontend
+### 2. Backend
+
+```bash
+uv sync
+uv run uvicorn main:app --reload
+# Runs on http://127.0.0.1:8000
+```
+
+### 3. Database (first run)
+
+```bash
+# Apply schema to your local Postgres
+psql $DATABASE_URL -f db/schema.sql
+
+# If upgrading an existing DB, run the migration instead:
+psql $DATABASE_URL -c "
+  ALTER TABLE generations ADD COLUMN IF NOT EXISTS input_tokens INT;
+  ALTER TABLE generations ADD COLUMN IF NOT EXISTS output_tokens INT;
+  ALTER TABLE generations ADD COLUMN IF NOT EXISTS estimated_cost_usd NUMERIC(10,6);
+"
+```
+
+### 4. Frontend
+
 ```bash
 cd frontend
 npm install
-npm run dev   # runs on http://localhost:3000
+npm run dev
+# Runs on http://localhost:3000
 ```
-Open the UI, paste a URL or click **Upload PDF**, then hit **Generate Post**.
 
 ---
 
-## 📤 Upload PDF Flow
-1. Switch the input mode to **Upload PDF** (toggle button).
-2. Choose a local `.pdf` file – the UI shows the filename.
-3. The file is sent as `multipart/form-data` to `/api/scrape/pdf-upload`.
-4. The backend extracts the text via `PdfScraper.scrape_bytes` and returns it to the UI.
-5. The content is fed into the LLM to produce a LinkedIn post.
+## 🐳 Docker (full stack)
+
+```bash
+cp .env.example .env
+# Edit .env — set OPENAI_API_KEY and JWT_SECRET
+# Leave DATABASE_URL host as 'db' for Docker networking
+
+docker compose up -d
+# API: http://localhost:8000
+# DB:  localhost:5432
+```
+
+`docker compose down -v` to tear down including the DB volume.
+
+---
+
+## 🔍 Observability
+
+**Health check:**
+```bash
+curl http://127.0.0.1:8000/health
+# {"status": "ok", "database": "connected"}
+# Returns 503 if DB is unreachable
+```
+
+**Live request logs** (tail server output):
+```
+2026-06-04 02:47:41 | INFO | GET /health 200 1ms
+2026-06-04 02:47:42 | INFO | POST /api/generate/linkedin-post 200 65732ms
+```
+
+---
+
+## 📤 PDF Upload Flow
+
+1. Switch input mode to **Upload PDF** (toggle button)
+2. Choose a local `.pdf` file — max **10MB**
+3. File sent as `multipart/form-data` to `/api/scrape/pdf-upload`
+4. Backend extracts text via `PdfScraper.scrape_bytes` and returns it
+5. Content is fed to the LLM to generate the LinkedIn post
 
 ---
 
 ## 📚 API Reference
+
 | Endpoint | Method | Body | Returns |
 |----------|--------|------|---------|
-| `/api/scrape` | POST | `{ "url": "<source>" }` | `{ "content": "...", "source_type": "youtube|article|pdf|markdown" }` |
-| `/api/scrape/pdf-upload` | POST (multipart) | `file` (PDF) | Same as above, `source_type` is always `pdf` |
-| `/api/generate/linkedin-post` | POST | `{ "transcript": "...", "creative_direction": "optional" }` | `{ "post": "..." }` |
+| `/health` | GET | — | `{"status": "ok", "database": "connected"}` |
+| `/api/auth/register` | POST | `{email, password}` | `{token}` |
+| `/api/auth/login` | POST | `{email, password}` | `{token}` |
+| `/api/scrape` | POST | `{"url": "<source>"}` | `{"content": "...", "source_type": "youtube\|article\|pdf\|markdown"}` |
+| `/api/scrape/pdf-upload` | POST (multipart) | `file` (PDF ≤ 10MB) | Same as above, `source_type` always `"pdf"` |
+| `/api/generate/linkedin-post` | POST | `{"transcript": "...", "creative_direction": "optional"}` | `{"post": "...", "generation_id": "...", "model_used": "..."}` |
+| `/api/profile` | GET/PUT | — / `{name, bio, ...}` | Profile object |
+| `/api/generations` | GET | — | List of past generations |
 
----
-
-## 🐳 Docker (optional)
-```dockerfile
-# Dockerfile (backend)
-FROM python:3.11-slim
-WORKDIR /app
-COPY . /app
-RUN pip install -r requirements.txt
-EXPOSE 8000
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
-```
-```yaml
-# docker-compose.yml (backend + UI)
-services:
-  backend:
-    build: .
-    ports:
-      - "8000:8000"
-  frontend:
-    build: ./frontend
-    ports:
-      - "3000:3000"
-```
-
----
-
-## 🙏 Contributing
-Feel free to open issues or PRs. Follow the existing code‑style guidelines (KISS, SOLID, YAGNI). Tests are run via `pytest`.
+Rate limit: **20 generations/hour** per authenticated user.
 
 ---
 
 ## 📄 License
-MIT – see `LICENSE` file.
+
+MIT
