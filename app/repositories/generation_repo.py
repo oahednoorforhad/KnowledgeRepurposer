@@ -9,16 +9,20 @@ async def create_generation(
     creative_direction: str | None,
     generated_post: str,
     model_used: str | None,
+    input_tokens: int | None = None,
+    output_tokens: int | None = None,
+    estimated_cost_usd: float | None = None,
 ) -> dict:
     conn = await acquire()
     try:
         row = await conn.fetchrow(
             """
-            INSERT INTO generations (user_id, source_url, source_type, raw_content, creative_direction, generated_post, model_used)
-            VALUES ($1::uuid, $2, $3, $4, $5, $6, $7)
+            INSERT INTO generations (user_id, source_url, source_type, raw_content, creative_direction, generated_post, model_used, input_tokens, output_tokens, estimated_cost_usd)
+            VALUES ($1::uuid, $2, $3, $4, $5, $6, $7, $8, $9, $10)
             RETURNING *
             """,
             user_id, source_url, source_type, raw_content, creative_direction, generated_post, model_used,
+            input_tokens, output_tokens, estimated_cost_usd,
         )
         return dict(row)
     finally:

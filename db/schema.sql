@@ -27,9 +27,17 @@ CREATE TABLE IF NOT EXISTS generations (
     creative_direction TEXT,
     generated_post TEXT NOT NULL,
     model_used TEXT,
+    input_tokens        INT,
+    output_tokens       INT,
+    estimated_cost_usd  NUMERIC(10,6),
     status TEXT NOT NULL DEFAULT 'draft',
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- Migration (run if upgrading existing DB):
+-- ALTER TABLE generations ADD COLUMN IF NOT EXISTS input_tokens INT;
+-- ALTER TABLE generations ADD COLUMN IF NOT EXISTS output_tokens INT;
+-- ALTER TABLE generations ADD COLUMN IF NOT EXISTS estimated_cost_usd NUMERIC(10,6);
 
 CREATE INDEX IF NOT EXISTS idx_generations_user_id ON generations(user_id);
 CREATE INDEX IF NOT EXISTS idx_generations_created_at ON generations(created_at DESC);

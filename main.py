@@ -17,6 +17,12 @@ from app.routers.auth_router import router as auth_router
 from app.routers.profile_router import router as profile_router
 from app.routers.generation_router import router as generation_router
 from db.connection import get_pool, close_pool
+from fastapi.responses import JSONResponse
+from loguru import logger
+from app.services.llm import count_tokens
+from app.services.rate_limiter import check_rate_limit
+from app.prompts import build_prompt
+from app.middleware.logging import LoggingMiddleware
 
 load_dotenv()
 
@@ -37,6 +43,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*", "Authorization"],
 )
+
+app.add_middleware(LoggingMiddleware)
 
 app.include_router(auth_router)
 app.include_router(profile_router)
@@ -202,16 +210,31 @@ async def scrape_youtube(request: YouTubeUrlRequest, user: dict | None = Depends
 
 
 @app.get("/health")
-def health():
-    return {"status": "ok"}
+async def health():
+    try:
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            await conn.execute("SELECT 1")
+        return {"status": "ok", "database": "connected"}
+    except Exception as e:
+        logger.warning(f"Health check DB error: {e}")
+        return JSONResponse(
+            status_code=503,
+            content={"status": "degraded", "database": "disconnected"},
+        )
 
 
 @app.post("/api/scrape/pdf-upload", response_model=ScrapeResponse)
 async def scrape_pdf_upload(file: UploadFile = File(...), user: dict | None = Depends(get_current_user)):
     if not file.filename or not file.filename.lower().endswith(".pdf"):
         raise HTTPException(status_code=400, detail="Only .pdf files are accepted.")
+    _MAX_PDF_BYTES = 10 * 1024 * 1024  # 10MB
+    if file.size is not None and file.size > _MAX_PDF_BYTES:
+        raise HTTPException(status_code=413, detail="File too large. Maximum size is 10MB.")
     try:
-        data = await file.read()
+        data = await file.read(_MAX_PDF_BYTES + 1)
+        if len(data) > _MAX_PDF_BYTES:
+            raise HTTPException(status_code=413, detail="File too large. Maximum size is 10MB.")
         content = pdf_scraper.scrape_bytes(data)
         if not content:
             raise HTTPException(
@@ -237,8 +260,30 @@ async def generate_linkedin_post(request: GeneratePostRequest, user: dict | None
     else:
         profile = None
 
+    # Pre-LLM token check — guards against unbounded context consumption
+    _messages_preview = [
+        {"role": "system", "content": build_prompt(profile)},
+        {"role": "user", "content": request.transcript},
+    ]
+    _token_count = count_tokens(_messages_preview)
+    if _token_count > 1000000:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Input too long ({_token_count} tokens). Maximum is 1000,000 tokens including the system prompt. Please shorten your content.",
+        )
+
+    # Per-user rate limit (in-memory, resets on restart)
+    if user:
+        _allowed, _retry_after = check_rate_limit(str(user["id"]))
+        if not _allowed:
+            raise HTTPException(
+                status_code=429,
+                detail="Rate limit exceeded. You can generate 20 posts per hour.",
+                headers={"Retry-After": str(_retry_after)},
+            )
+
     try:
-        post, model_used = llm_service.generate_linkedin_post(
+        post, model_used, usage = llm_service.generate_linkedin_post(
             transcript=request.transcript,
             creative_direction=request.creative_direction,
             api_key=request.api_key,
@@ -262,9 +307,11 @@ async def generate_linkedin_post(request: GeneratePostRequest, user: dict | None
                 creative_direction=request.creative_direction,
                 generated_post=post,
                 model_used=model_used,
+                input_tokens=usage.get("input_tokens"),
+                output_tokens=usage.get("output_tokens"),
             )
             generation_id = str(gen["id"])
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning(f"Failed to save generation to DB: {e}")
 
     return GeneratePostResponse(post=post, generation_id=generation_id, model_used=model_used)

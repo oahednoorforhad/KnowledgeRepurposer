@@ -1,0 +1,35 @@
+INFO:     127.0.0.1:50332 - "POST /api/scrape HTTP/1.1" 500 Internal Server Error
+INFO:     127.0.0.1:53531 - "POST /api/scrape HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53531 - "POST /api/generate/linkedin-post HTTP/1.1" 422 Unprocessable Content
+  INFO:     127.0.0.1:58256 - "OPTIONS /api/scrape HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58256 - "POST /api/scrape HTTP/1.1" 500 Internal Server Error
+INFO:     127.0.0.1:56656 - "POST /api/scrape HTTP/1.1" 500 Internal Server Error
+INFO:     127.0.0.1:54613 - "POST /api/scrape HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54613 - "OPTIONS /api/generate/linkedin-post HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54613 - "POST /api/generate/linkedin-post HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61558 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63542 - "OPTIONS /profile HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63542 - "GET /profile HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63542 - "GET /profile HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63542 - "GET /profile HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63542 - "GET /profile HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63542 - "OPTIONS /auth/logout HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63542 - "POST /auth/logout HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55627 - "OPTIONS /auth/login HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55627 - "POST /auth/login HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55627 - "GET /profile HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52033 - "GET /profile HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53436 - "GET /profile HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55383 - "GET /profile HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52042 - "OPTIONS /api/scrape/pdf-upload HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52042 - "POST /api/scrape/pdf-upload HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52042 - "POST /api/generate/linkedin-post HTTP/1.1" 422 Unprocessable Content
+ INFO:     127.0.0.1:50626 - "POST /api/scrape/pdf-upload HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50626 - "OPTIONS /api/generate/linkedin-post HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50626 - "POST /api/generate/linkedin-post HTTP/1.1" 422 Unprocessable Content
+INFO:     127.0.0.1:58359 - "POST /api/scrape/pdf-upload HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58359 - "POST /api/generate/linkedin-post HTTP/1.1" 422 Unprocessable Content
+INFO:     127.0.0.1:58359 - "POST /api/scrape/pdf-upload HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58359 - "POST /api/generate/linkedin-post HTTP/1.1" 422 Unprocessable Content
+ INFO:     127.0.0.1:53113 - "POST /api/scrape/pdf-upload HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56852 - "POST /api/generate/linkedin-post HTTP/1.1" 200 OK

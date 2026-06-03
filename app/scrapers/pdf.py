@@ -29,6 +29,9 @@ class PdfScraper:
                 logger.info(f"Downloading PDF from URL: {source}")
                 response = requests.get(source, headers=self.headers, timeout=15)
                 response.raise_for_status()
+                content_length = response.headers.get("content-length")
+                if content_length and int(content_length) > 10 * 1024 * 1024:
+                    raise ValueError("PDF URL too large. Maximum size is 10MB.")
                 pdf_file = io.BytesIO(response.content)
             else:
                 logger.info(f"Reading local PDF: {source}")
