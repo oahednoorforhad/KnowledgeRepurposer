@@ -10,7 +10,7 @@ from contextlib import asynccontextmanager
 
 from app.scrapers import YouTubeScraper, ArticleScraper, PdfScraper, MarkdownScraper
 from app.services.llm import LLMService
-from app.auth import get_current_user, require_current_user
+from app.auth import get_current_user
 from app.repositories.profile_repo import get_profile
 from app.repositories.generation_repo import create_generation
 from app.routers.auth_router import router as auth_router
