@@ -3,26 +3,25 @@
 A **single-page web app** that extracts insights from YouTube videos, articles, PDFs, or Markdown files and generates premium LinkedIn-ready posts using LLMs via [OpenRouter](https://openrouter.ai/).
 
 ```mermaid
-flowchart TD
-    subgraph Frontend[Frontend (Next.js)]
+flowchart LR
+    subgraph FE["Frontend (Next.js :3000)"]
         UI[UI Components]
-        Input["Input Toggle & Upload"]
+        Input[Input / PDF Upload]
         Output[Post Preview]
     end
-    subgraph Backend[Backend (FastAPI)]
+
+    subgraph BE["Backend (FastAPI :8000)"]
         API[API Endpoints]
         Scraper[Scrapers]
         LLM[LLM Service]
-        DB[(PostgreSQL)]
     end
-    UI --> Input
-    Input --> API
-    API --> Scraper
-    Scraper --> LLM
-    LLM --> API
+
+    DB[(PostgreSQL)]
+
+    UI --> Input --> API
+    API --> Scraper --> LLM --> API
     API --> DB
-    API --> Output
-    Output --> UI
+    API --> Output --> UI
 ```
 
 ---
