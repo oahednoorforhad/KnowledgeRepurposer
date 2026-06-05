@@ -8,6 +8,11 @@ Provides:
 """
 
 import os
+os.environ.setdefault(
+    "JWT_SECRET",
+    "test-secret-key-that-is-at-least-32-characters-long",
+)
+
 import uuid
 
 import pytest
@@ -16,14 +21,6 @@ from httpx import ASGITransport, AsyncClient
 from app.auth import create_jwt, hash_password
 from db.connection import close_pool, get_pool
 from main import app
-
-# ---------------------------------------------------------------------------
-# Environment — ensure JWT secret is available for tests
-# ---------------------------------------------------------------------------
-os.environ.setdefault(
-    "JWT_SECRET",
-    "test-secret-key-that-is-at-least-32-characters-long",
-)
 
 
 # ---------------------------------------------------------------------------

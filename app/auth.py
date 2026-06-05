@@ -1,4 +1,6 @@
+import hashlib
 import os
+import secrets
 from datetime import datetime, timedelta, timezone
 
 import bcrypt
@@ -11,6 +13,7 @@ from app.repositories.user_repo import get_user_by_id
 JWT_SECRET = os.getenv("JWT_SECRET", "")
 JWT_ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRY_MINUTES = 15
+REFRESH_TOKEN_EXPIRY_DAYS = 7
 
 
 def _validate_jwt_secret() -> None:
@@ -38,6 +41,14 @@ def hash_password(plain: str) -> str:
 
 def verify_password(plain: str, hashed: str) -> bool:
     return bcrypt.checkpw(plain.encode(), hashed.encode())
+
+
+def create_refresh_token_value() -> str:
+    return secrets.token_hex(32)
+
+
+def hash_refresh_token(token: str) -> str:
+    return hashlib.sha256(token.encode()).hexdigest()
 
 
 def create_jwt(user_id: str) -> str:

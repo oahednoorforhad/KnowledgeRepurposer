@@ -16,7 +16,7 @@ async def create_user(email: str, hashed_password: str) -> dict:
 async def get_user_by_email(email: str) -> dict | None:
     conn = await acquire()
     try:
-        row = await conn.fetchrow("SELECT id, email, hashed_password, created_at FROM users WHERE email = $1", email)
+        row = await conn.fetchrow("SELECT id, email, hashed_password, created_at FROM users WHERE LOWER(email) = LOWER($1)", email)
         return dict(row) if row else None
     finally:
         await release(conn)
