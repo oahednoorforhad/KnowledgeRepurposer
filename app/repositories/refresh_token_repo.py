@@ -49,6 +49,19 @@ async def revoke_refresh_token(token_hash: str) -> bool:
         await release(conn)
 
 
+async def get_refresh_token_by_hash(token_hash: str) -> dict | None:
+    """Return a refresh token row regardless of revoked/expired status."""
+    conn = await acquire()
+    try:
+        row = await conn.fetchrow(
+            "SELECT * FROM refresh_tokens WHERE token_hash = $1",
+            token_hash,
+        )
+        return dict(row) if row else None
+    finally:
+        await release(conn)
+
+
 async def revoke_all_refresh_tokens(user_id: str) -> int:
     conn = await acquire()
     try:

@@ -27,7 +27,7 @@ export default function HistorySidebar({ open, onClose, onSelect, refreshKey }: 
   const load = async () => {
     setLoading(true);
     try {
-      const res = await fetch("http://127.0.0.1:8000/generations", { headers: authHeaders() });
+      const res = await fetch("http://localhost:8000/generations", { headers: authHeaders(), credentials: "include" });
       if (res.ok) setGenerations(await res.json());
     } catch {} finally {
       setLoading(false);
@@ -39,17 +39,17 @@ export default function HistorySidebar({ open, onClose, onSelect, refreshKey }: 
   }, [open, refreshKey]);
 
   const handleDelete = async (id: string) => {
-    const res = await fetch(`http://127.0.0.1:8000/generations/${id}`, {
+    const res = await fetch(`http://localhost:8000/generations/${id}`, {
       method: "DELETE",
-      headers: authHeaders(),
+      headers: authHeaders(), credentials: "include",
     });
     if (res.ok) setGenerations((prev) => prev.filter((g) => g.id !== id));
   };
 
   const handleArchive = async (id: string) => {
-    const res = await fetch(`http://127.0.0.1:8000/generations/${id}/status`, {
+    const res = await fetch(`http://localhost:8000/generations/${id}/status`, {
       method: "PATCH",
-      headers: { "Content-Type": "application/json", ...authHeaders() },
+      headers: { "Content-Type": "application/json", ...authHeaders() }, credentials: "include",
       body: JSON.stringify({ status: "archived" }),
     });
     if (res.ok) load();

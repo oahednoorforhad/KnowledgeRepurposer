@@ -245,7 +245,7 @@ class TestEmailNormalization:
             json={"email": email.lower(), "password": password},
         )
         assert resp.status_code == 200
-        assert "token" in resp.json()
+        assert "message" in resp.json()
 
     async def test_login_upper_with_existing_user(self):
         """Login with uppercase form of an existing user's email should work.
@@ -269,7 +269,7 @@ class TestEmailNormalization:
             json={"email": email.upper(), "password": password},
         )
         assert resp.status_code == 200
-        assert "token" in resp.json()
+        assert "message" in resp.json()
 
         # Manual cleanup
         from db.connection import get_pool

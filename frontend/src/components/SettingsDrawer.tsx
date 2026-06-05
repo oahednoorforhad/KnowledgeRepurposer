@@ -31,7 +31,7 @@ export default function SettingsDrawer({ open, onClose, onSaved, onLogout }: Pro
   useEffect(() => {
     if (!open) return;
     setLoading(true);
-    fetch("http://127.0.0.1:8000/profile", { headers: authHeaders() })
+    fetch("http://localhost:8000/profile", { headers: authHeaders(), credentials: "include" })
       .then((r) => r.json())
       .then((data) => {
         if (data && !data.detail) {
@@ -52,9 +52,9 @@ export default function SettingsDrawer({ open, onClose, onSaved, onLogout }: Pro
   const handleSave = async () => {
     setSaving(true);
     try {
-      const res = await fetch("http://127.0.0.1:8000/profile", {
+      const res = await fetch("http://localhost:8000/profile", {
         method: "PUT",
-        headers: { "Content-Type": "application/json", ...authHeaders() },
+        headers: { "Content-Type": "application/json", ...authHeaders() }, credentials: "include",
         body: JSON.stringify(form),
       });
       if (res.ok) {

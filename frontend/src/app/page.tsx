@@ -74,7 +74,7 @@ export default function Home() {
   const [profileComplete, setProfileComplete] = useState(false);
 
   useEffect(() => {
-    fetch("http://127.0.0.1:8000/profile", { credentials: "include" })
+    fetch("http://localhost:8000/profile", { credentials: "include" })
       .then((r) => {
         if (!r.ok) throw new Error("Not authenticated");
         return r.json();
@@ -121,7 +121,7 @@ export default function Home() {
       if (inputMode === "pdf" && pdfFile) {
         const formData = new FormData();
         formData.append("file", pdfFile);
-        const scrapeRes = await fetch("http://127.0.0.1:8000/api/scrape/pdf-upload", {
+        const scrapeRes = await fetch("http://localhost:8000/api/scrape/pdf-upload", {
           method: "POST", headers: authHeaders(), credentials: "include", body: formData,
         });
         if (!scrapeRes.ok) {
@@ -133,7 +133,7 @@ export default function Home() {
         sourceUrl = scrapeData.metadata?.filename || null;
         sourceType = "pdf";
       } else {
-        const scrapeRes = await fetch("http://127.0.0.1:8000/api/scrape", {
+        const scrapeRes = await fetch("http://localhost:8000/api/scrape", {
           method: "POST",
           headers: { "Content-Type": "application/json", ...authHeaders() },
           credentials: "include",
@@ -149,7 +149,7 @@ export default function Home() {
         sourceType = scrapeData.source_type;
       }
 
-      const generateRes = await fetch("http://127.0.0.1:8000/api/generate/linkedin-post", {
+      const generateRes = await fetch("http://localhost:8000/api/generate/linkedin-post", {
         method: "POST",
         headers: { "Content-Type": "application/json", ...authHeaders() },
         credentials: "include",
@@ -183,7 +183,7 @@ export default function Home() {
 
   const handleLogout = async () => {
     try {
-      await fetch("http://127.0.0.1:8000/auth/logout", {
+      await fetch("http://localhost:8000/auth/logout", {
         method: "POST",
         headers: authHeaders(),
         credentials: "include",

@@ -1,9 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { Zap, Loader2, ArrowRight } from "lucide-react";
-// Cookie-based auth — token managed via HTTP-only cookie
+// Cookie-based auth ?" token managed via HTTP-only cookie
 
 export default function LoginPage() {
   const router = useRouter();
@@ -12,6 +12,25 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [pageReady, setPageReady] = useState(false);
+
+  useEffect(() => {
+    fetch("http://localhost:8000/profile", { credentials: "include" })
+      .then((r) => {
+        if (r.ok) {
+          router.replace("/");
+        } else {
+          setPageReady(true);
+        }
+      })
+      .catch(() => {
+        setPageReady(true);
+      });
+  }, [router]);
+
+  if (!pageReady) {
+    return <div className="min-h-screen flex items-center justify-center"><Loader2 className="w-5 h-5 animate-spin text-white/40" /></div>;
+  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -19,7 +38,7 @@ export default function LoginPage() {
     setLoading(true);
 
     try {
-      const res = await fetch(`http://127.0.0.1:8000/auth/${mode}`, {
+      const res = await fetch(`http://localhost:8000/auth/${mode}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
