@@ -5,7 +5,7 @@ from datetime import datetime, timedelta, timezone
 
 import bcrypt
 import jwt
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
 from app.repositories.user_repo import get_user_by_id
@@ -71,11 +71,15 @@ def decode_jwt(token: str) -> str:
 
 
 async def get_current_user(
+    request: Request,
     credentials: HTTPAuthorizationCredentials | None = Depends(security),
 ) -> dict | None:
-    if credentials is None:
+    token: str | None = request.cookies.get("access_token")
+    if token is None and credentials is not None:
+        token = credentials.credentials
+    if token is None:
         return None
-    user_id = decode_jwt(credentials.credentials)
+    user_id = decode_jwt(token)
     user = await get_user_by_id(user_id)
     if user is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
@@ -83,9 +87,10 @@ async def get_current_user(
 
 
 async def require_current_user(
+    request: Request,
     credentials: HTTPAuthorizationCredentials | None = Depends(security),
 ) -> dict:
-    user = await get_current_user(credentials)
+    user = await get_current_user(request, credentials)
     if user is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication required")
     return user

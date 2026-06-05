@@ -1,6 +1,7 @@
+import os
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from pydantic import BaseModel, EmailStr, Field, field_validator
 
 from app.auth import (
@@ -36,31 +37,13 @@ class AuthRequest(BaseModel):
         return v.strip().lower()
 
 
-class AuthResponse(BaseModel):
-    token: str
-    user_id: str
-    refresh_token: str
-
-
-class RefreshRequest(BaseModel):
-    refresh_token: str
-
-
-class LogoutRequest(BaseModel):
-    refresh_token: str
-
-
-class LogoutResponse(BaseModel):
-    message: str
-
-
 class ChangePasswordRequest(BaseModel):
     current_password: str
     new_password: str = Field(min_length=10)
 
 
-@router.post("/register", response_model=AuthResponse, status_code=status.HTTP_201_CREATED)
-async def register(body: AuthRequest, request: Request):
+@router.post("/register", status_code=status.HTTP_201_CREATED)
+async def register(body: AuthRequest, request: Request, response: Response):
     allowed, retry_after = check_auth_rate_limit(request.client.host, "register")
     if not allowed:
         raise HTTPException(
@@ -82,11 +65,29 @@ async def register(body: AuthRequest, request: Request):
     refresh_expiry = datetime.now(timezone.utc) + timedelta(days=REFRESH_TOKEN_EXPIRY_DAYS)
     await create_refresh_token(user_id, refresh_hash, refresh_expiry)
 
-    return AuthResponse(token=token, user_id=user_id, refresh_token=raw_refresh)
+    secure = os.getenv("COOKIE_SECURE", "false").lower() == "true"
+    response.set_cookie(
+        key="access_token",
+        value=token,
+        httponly=True,
+        samesite="lax",
+        secure=secure,
+        path="/",
+    )
+    response.set_cookie(
+        key="refresh_token",
+        value=raw_refresh,
+        httponly=True,
+        samesite="lax",
+        secure=secure,
+        path="/",
+    )
+
+    return {"message": "success", "user_id": user_id}
 
 
-@router.post("/login", response_model=AuthResponse)
-async def login(body: AuthRequest, request: Request):
+@router.post("/login")
+async def login(body: AuthRequest, request: Request, response: Response):
     allowed, retry_after = check_auth_rate_limit(request.client.host, "login")
     if not allowed:
         raise HTTPException(
@@ -106,12 +107,36 @@ async def login(body: AuthRequest, request: Request):
     refresh_expiry = datetime.now(timezone.utc) + timedelta(days=REFRESH_TOKEN_EXPIRY_DAYS)
     await create_refresh_token(user_id, refresh_hash, refresh_expiry)
 
-    return AuthResponse(token=token, user_id=user_id, refresh_token=raw_refresh)
+    secure = os.getenv("COOKIE_SECURE", "false").lower() == "true"
+    response.set_cookie(
+        key="access_token",
+        value=token,
+        httponly=True,
+        samesite="lax",
+        secure=secure,
+        path="/",
+    )
+    response.set_cookie(
+        key="refresh_token",
+        value=raw_refresh,
+        httponly=True,
+        samesite="lax",
+        secure=secure,
+        path="/",
+    )
+
+    return {"message": "success", "user_id": user_id}
 
 
-@router.post("/refresh", response_model=AuthResponse)
-async def refresh(body: RefreshRequest):
-    token_hash = hash_refresh_token(body.refresh_token)
+@router.post("/refresh")
+async def refresh(request: Request, response: Response):
+    raw_refresh_token = request.cookies.get("refresh_token")
+    if not raw_refresh_token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Refresh token missing.",
+        )
+    token_hash = hash_refresh_token(raw_refresh_token)
     valid = await get_valid_refresh_token(token_hash)
     if valid:
         user_id = str(valid["user_id"])
@@ -120,7 +145,26 @@ async def refresh(body: RefreshRequest):
         new_hash = hash_refresh_token(new_raw_refresh)
         new_expiry = datetime.now(timezone.utc) + timedelta(days=REFRESH_TOKEN_EXPIRY_DAYS)
         await rotate_refresh_token(token_hash, new_hash, new_expiry)
-        return AuthResponse(token=new_access, user_id=user_id, refresh_token=new_raw_refresh)
+
+        secure = os.getenv("COOKIE_SECURE", "false").lower() == "true"
+        response.set_cookie(
+            key="access_token",
+            value=new_access,
+            httponly=True,
+            samesite="lax",
+            secure=secure,
+            path="/",
+        )
+        response.set_cookie(
+            key="refresh_token",
+            value=new_raw_refresh,
+            httponly=True,
+            samesite="lax",
+            secure=secure,
+            path="/",
+        )
+
+        return {"message": "success", "user_id": user_id}
 
     existing = await get_refresh_token_by_hash(token_hash)
     if existing:
@@ -136,11 +180,19 @@ async def refresh(body: RefreshRequest):
     )
 
 
-@router.post("/logout", response_model=LogoutResponse)
-async def logout(body: LogoutRequest, current_user: dict = Depends(require_current_user)):
-    token_hash = hash_refresh_token(body.refresh_token)
-    await revoke_refresh_token(token_hash)
-    return LogoutResponse(message="Logged out successfully")
+@router.post("/logout")
+async def logout(
+    request: Request,
+    response: Response,
+    current_user: dict = Depends(require_current_user),
+):
+    raw_refresh_token = request.cookies.get("refresh_token")
+    if raw_refresh_token:
+        token_hash = hash_refresh_token(raw_refresh_token)
+        await revoke_refresh_token(token_hash)
+    response.delete_cookie(key="access_token", path="/")
+    response.delete_cookie(key="refresh_token", path="/")
+    return {"message": "success"}
 
 
 @router.post("/change-password")
