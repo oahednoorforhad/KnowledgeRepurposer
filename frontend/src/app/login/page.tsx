@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Zap, Loader2, ArrowRight } from "lucide-react";
-import { setToken } from "@/lib/auth";
+// Cookie-based auth — token managed via HTTP-only cookie
 
 export default function LoginPage() {
   const router = useRouter();
@@ -22,11 +22,11 @@ export default function LoginPage() {
       const res = await fetch(`http://127.0.0.1:8000/auth/${mode}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        credentials: "include",
         body: JSON.stringify({ email, password }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.detail || "Something went wrong");
-      setToken(data.token);
       router.push("/");
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "An error occurred");
@@ -72,11 +72,11 @@ export default function LoginPage() {
             <input
               type="password"
               required
-              minLength={6}
+              minLength={10}
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               className="w-full h-10 px-3.5 rounded-xl text-[13.5px] text-white bg-white/5 border border-white/10 outline-none focus:border-white/20 focus:bg-white/8 transition-all"
-              placeholder="At least 6 characters"
+              placeholder="At least 10 characters"
             />
           </div>
 

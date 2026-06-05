@@ -1,20 +1,17 @@
 const TOKEN_KEY = "kp_token";
 
 export function getToken(): string | null {
-  if (typeof window === "undefined") return null;
-  return localStorage.getItem(TOKEN_KEY);
+  return null;
 }
 
-export function setToken(token: string): void {
-  localStorage.setItem(TOKEN_KEY, token);
+export function setToken(_token: string): void {
+  // No-op: tokens are now managed via HTTP-only cookies
 }
 
 export function clearToken(): void {
-  localStorage.removeItem(TOKEN_KEY);
+  // No-op: tokens are now managed via HTTP-only cookies
 }
 
 export function authHeaders(): Record<string, string> {
-  const token = getToken();
-  if (!token) return {};
-  return { Authorization: `Bearer ${token}` };
+  return {};
 }
