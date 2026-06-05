@@ -1,8 +1,9 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, EmailStr, Field, field_validator
 
 from app.auth import create_jwt, hash_password, require_current_user, verify_password
 from app.repositories.user_repo import create_user, get_user_by_email
+from app.services.rate_limiter import check_auth_rate_limit
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -27,7 +28,14 @@ class LogoutResponse(BaseModel):
 
 
 @router.post("/register", response_model=AuthResponse, status_code=status.HTTP_201_CREATED)
-async def register(body: AuthRequest):
+async def register(body: AuthRequest, request: Request):
+    allowed, retry_after = check_auth_rate_limit(request.client.host, "register")
+    if not allowed:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=f"Too many registration attempts. Retry after {retry_after} seconds.",
+            headers={"Retry-After": str(retry_after)},
+        )
     existing = await get_user_by_email(body.email)
     if existing:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Email already registered")
@@ -38,7 +46,14 @@ async def register(body: AuthRequest):
 
 
 @router.post("/login", response_model=AuthResponse)
-async def login(body: AuthRequest):
+async def login(body: AuthRequest, request: Request):
+    allowed, retry_after = check_auth_rate_limit(request.client.host, "login")
+    if not allowed:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=f"Too many login attempts. Retry after {retry_after} seconds.",
+            headers={"Retry-After": str(retry_after)},
+        )
     user = await get_user_by_email(body.email)
     if not user or not verify_password(body.password, user["hashed_password"]):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid email or password")
