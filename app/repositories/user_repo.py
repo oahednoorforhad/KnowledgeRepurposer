@@ -25,7 +25,18 @@ async def get_user_by_email(email: str) -> dict | None:
 async def get_user_by_id(user_id: str) -> dict | None:
     conn = await acquire()
     try:
-        row = await conn.fetchrow("SELECT id, email, created_at FROM users WHERE id = $1::uuid", user_id)
+        row = await conn.fetchrow("SELECT id, email, hashed_password, created_at FROM users WHERE id = $1::uuid", user_id)
         return dict(row) if row else None
+    finally:
+        await release(conn)
+
+
+async def update_user_password(user_id: str, hashed_password: str) -> None:
+    conn = await acquire()
+    try:
+        await conn.execute(
+            "UPDATE users SET hashed_password = $1 WHERE id = $2::uuid",
+            hashed_password, user_id,
+        )
     finally:
         await release(conn)
