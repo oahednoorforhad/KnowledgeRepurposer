@@ -230,7 +230,8 @@ async def scrape_pdf_upload(file: UploadFile = File(...), user: dict = Depends(r
     if not file.filename or not file.filename.lower().endswith(".pdf"):
         raise HTTPException(status_code=400, detail="Only .pdf files are accepted.")
     _MAX_PDF_BYTES = 10 * 1024 * 1024  # 10MB
-    if file.size is not None and file.size > _MAX_PDF_BYTES:
+    file_size = getattr(file, "size", None)
+    if file_size is not None and file_size > _MAX_PDF_BYTES:
         raise HTTPException(status_code=413, detail="File too large. Maximum size is 10MB.")
     try:
         data = await file.read(_MAX_PDF_BYTES + 1)
