@@ -92,3 +92,47 @@ async def test_refine_unknown_generation_returns_404(client, auth_headers):
         f"/generations/{uuid.uuid4()}/refine", json={"instruction": "x"}, headers=auth_headers
     )
     assert resp.status_code == 404
+
+
+async def _refine_events(client, auth_headers, generation, deltas):
+    import json
+    from unittest import mock
+
+    async def fake_stream(messages, api_key=None):
+        for d in deltas:
+            yield {"delta": d}
+        yield {"model_used": "m", "usage": {}}
+
+    with (
+        mock.patch("main.get_profile", return_value={"name": "Tester"}),
+        mock.patch("main.llm_service.stream_post", fake_stream),
+    ):
+        resp = await client.post(
+            f"/generations/{generation['id']}/refine",
+            json={"instruction": "x"},
+            headers=auth_headers,
+        )
+    return [json.loads(line) for line in resp.text.splitlines()]
+
+
+async def test_refine_empty_output_reports_error_and_keeps_post(client, auth_headers, generation):
+    events = await _refine_events(client, auth_headers, generation, ["  ", "\n"])
+    assert "error" in events[-1] and "done" not in events[-1]
+    saved = await client.get(f"/generations/{generation['id']}", headers=auth_headers)
+    assert saved.json()["generated_post"] == "Original post"
+
+
+async def test_refine_save_failure_reports_error(client, auth_headers, generation):
+    from unittest import mock
+
+    with mock.patch("main.update_post", side_effect=RuntimeError("db down")):
+        events = await _refine_events(client, auth_headers, generation, ["New post"])
+    assert "couldn't be saved" in events[-1]["error"]
+
+
+async def test_refine_of_deleted_generation_reports_error(client, auth_headers, generation):
+    from unittest import mock
+
+    with mock.patch("main.update_post", return_value=None):
+        events = await _refine_events(client, auth_headers, generation, ["New post"])
+    assert "deleted" in events[-1]["error"]

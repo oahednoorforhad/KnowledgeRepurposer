@@ -299,9 +299,13 @@ def _stream_llm(messages: list[dict], api_key: str | None, save) -> StreamingRes
 
         try:
             saved = await save(post, final)
+        except ValueError as e:  # save() rejected the output
+            yield _ndjson({"error": str(e)})
+            return
         except Exception as e:
             logger.warning(f"Failed to save generation to DB: {e}")
-            saved = {}
+            yield _ndjson({"error": "The post was written but couldn't be saved. Please retry."})
+            return
         yield _ndjson({"done": True, "model_used": final.get("model_used"), **saved})
 
     return StreamingResponse(events(), media_type="application/x-ndjson")
@@ -360,7 +364,11 @@ async def refine_generation(generation_id: str, request: RefineRequest, user: di
     _check_generation_limits(user, messages)
 
     async def save(post: str, final: dict) -> dict:
-        await update_post(generation_id, user["id"], post.strip())
+        post = post.strip()
+        if not post or len(post) > 10000:  # same bounds as PATCH /generations/{id}
+            raise ValueError("The refined post was empty or too long, so it wasn't saved. Please retry.")
+        if await update_post(generation_id, user["id"], post) is None:
+            raise ValueError("This post was deleted while refining, so the result wasn't saved.")
         return {"generation_id": generation_id}
 
     return _stream_llm(messages, request.api_key, save)
