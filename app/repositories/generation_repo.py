@@ -65,6 +65,31 @@ async def update_status(generation_id: str, user_id: str, status: str) -> dict |
         await release(conn)
 
 
+RAW_CONTENT_LIMIT = 50000
+
+
+async def get_cached_source(user_id: str, source_url: str) -> dict | None:
+    """Latest untruncated content this user already scraped from source_url.
+
+    Scoped per user: raw_content comes from the client on generate, so a shared
+    cache would let one user plant content for everyone else.
+    """
+    conn = await acquire()
+    try:
+        row = await conn.fetchrow(
+            """
+            SELECT raw_content, source_type FROM generations
+            WHERE user_id = $1::uuid AND source_url = $2
+              AND raw_content IS NOT NULL AND length(raw_content) < $3
+            ORDER BY created_at DESC LIMIT 1
+            """,
+            user_id, source_url, RAW_CONTENT_LIMIT,
+        )
+        return dict(row) if row else None
+    finally:
+        await release(conn)
+
+
 async def update_post(generation_id: str, user_id: str, generated_post: str) -> dict | None:
     conn = await acquire()
     try:

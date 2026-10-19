@@ -16,7 +16,7 @@ from app.scrapers import YouTubeScraper, ArticleScraper, PdfScraper, MarkdownScr
 from app.services.llm import LLMService
 from app.auth import require_current_user, _validate_jwt_secret
 from app.repositories.profile_repo import get_profile
-from app.repositories.generation_repo import create_generation, get_generation, update_post
+from app.repositories.generation_repo import RAW_CONTENT_LIMIT, create_generation, get_cached_source, get_generation, update_post
 from app.routers.auth_router import router as auth_router
 from app.routers.profile_router import router as profile_router
 from app.routers.generation_router import router as generation_router
@@ -337,7 +337,7 @@ async def generate_linkedin_post(request: GeneratePostRequest, user: dict = Depe
                 user_id=user["id"],
                 source_url=request.source_url,
                 source_type=request.source_type or "youtube",
-                raw_content=request.transcript[:50000],
+                raw_content=request.transcript[:RAW_CONTENT_LIMIT],
                 creative_direction=request.creative_direction,
                 generated_post=variant,
                 model_used=final.get("model_used"),
