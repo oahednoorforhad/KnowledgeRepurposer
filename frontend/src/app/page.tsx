@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import ReactMarkdown from "react-markdown";
 import {
-  Sparkles, ArrowRight, Loader2, PlaySquare, Copy, Check, Zap, FileUp, Link2, X, Settings, Clock,
+  Sparkles, ArrowRight, Loader2, PlaySquare, Copy, Check, Zap, FileUp, Link2, X, Settings, Clock, Pencil,
 } from "lucide-react";
 import { apiFetch } from "@/lib/auth";
 import { readNdjson } from "@/lib/ndjson";
@@ -96,6 +96,37 @@ export default function Home() {
   const versions = splitVersions(post);
   const activeIndex = Math.min(activeVersion, Math.max(versions.length - 1, 0));
   const shown = versions[activeIndex] ?? "";
+  const activeId = generationIds[activeIndex];
+
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState("");
+  const [savingEdit, setSavingEdit] = useState(false);
+
+  const replaceVersion = (index: number, text: string) =>
+    setPost((prev) => {
+      const parts = prev.split(VARIANT_SEPARATOR).map((v) => v.trim()).filter(Boolean);
+      parts[index] = text;
+      return parts.join(`\n${VARIANT_SEPARATOR}\n`);
+    });
+
+  const handleSaveEdit = async () => {
+    setSavingEdit(true);
+    try {
+      const res = await apiFetch(`/generations/${activeId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ generated_post: draft }),
+      });
+      if (!res.ok) throw new Error("Failed to save your edit.");
+      replaceVersion(activeIndex, draft.trim());
+      setEditing(false);
+      setRefreshHistory((n) => n + 1);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Failed to save your edit.");
+    } finally {
+      setSavingEdit(false);
+    }
+  };
 
   useEffect(() => {
     apiFetch("/profile")
@@ -138,6 +169,7 @@ export default function Home() {
     setPost("");
     setActiveVersion(0);
     setGenerationIds([]);
+    setEditing(false);
 
     try {
       let content: string;
@@ -441,7 +473,20 @@ export default function Home() {
               <Sparkles className="w-3.5 h-3.5 text-[oklch(0.72_0.18_255)]" />
               <Label className="!text-white/35">Generated Post</Label>
             </div>
-            {shown && !loading && <CopyButton text={shown} />}
+            {shown && !loading && !editing && (
+              <div className="flex items-center gap-2">
+                {activeId && (
+                  <button
+                    onClick={() => { setDraft(shown); setEditing(true); }}
+                    title="Edit post"
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-white/5 text-white/50 border border-white/10 hover:bg-white/10 hover:text-white/80 transition-all duration-200"
+                  >
+                    <Pencil className="w-3.5 h-3.5" /> Edit
+                  </button>
+                )}
+                <CopyButton text={shown} />
+              </div>
+            )}
           </div>
 
           {versions.length > 1 && (
@@ -451,7 +496,7 @@ export default function Home() {
                   key={i}
                   role="tab"
                   aria-selected={i === activeIndex}
-                  onClick={() => setActiveVersion(i)}
+                  onClick={() => { setActiveVersion(i); setEditing(false); }}
                   className={cn(
                     "h-7 px-3 rounded-lg text-[12px] font-medium transition-all duration-200",
                     i === activeIndex ? "bg-white/10 text-white" : "text-white/35 hover:text-white/60"
@@ -480,6 +525,27 @@ export default function Home() {
                 <div className="h-2" />
                 <SkeletonBlock className="h-3 w-4/5" />
                 <SkeletonBlock className="h-3 w-2/3" />
+              </div>
+            ) : editing ? (
+              <div className="flex flex-col gap-3 h-full">
+                <textarea
+                  id="post-editor"
+                  aria-label="Edit post"
+                  value={draft}
+                  onChange={(e) => setDraft(e.target.value)}
+                  className="flex-1 min-h-[320px] w-full p-3.5 rounded-xl text-[13.5px] font-light leading-relaxed text-white/85 bg-white/5 border border-white/10 outline-none focus:border-white/20 resize-none"
+                />
+                <div className="flex justify-end gap-2">
+                  <button
+                    onClick={() => setEditing(false)}
+                    className="h-8 px-3 rounded-lg text-[12px] text-white/50 border border-white/10 hover:bg-white/10 transition-all"
+                  >Cancel</button>
+                  <button
+                    onClick={handleSaveEdit}
+                    disabled={savingEdit || !draft.trim()}
+                    className="h-8 px-3 rounded-lg text-[12px] font-semibold bg-white text-[oklch(0.10_0.008_248)] hover:bg-white/92 disabled:opacity-50 transition-all"
+                  >{savingEdit ? "Saving…" : "Save"}</button>
+                </div>
               </div>
             ) : shown ? (
               <div className="md-output">
@@ -518,6 +584,7 @@ export default function Home() {
           setPost(gen.generated_post);
           setActiveVersion(0);
           setGenerationIds([gen.id]);
+          setEditing(false);
           if (gen.source_url) setUrl(gen.source_url);
         }}
         refreshKey={refreshHistory}
