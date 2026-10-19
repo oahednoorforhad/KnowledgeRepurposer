@@ -9,6 +9,9 @@ wheels/
 # Virtual environments
 .venv
 .env
-.env.example
 knowledgePosterPRD.md
 .omo
+
+# Local tooling / logs
+.puku/
+*.log

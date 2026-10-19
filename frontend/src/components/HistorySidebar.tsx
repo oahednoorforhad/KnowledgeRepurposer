@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { Clock, Trash2, Archive, Copy, RotateCcw, X, Loader2, PlaySquare, FileText } from "lucide-react";
-import { authHeaders } from "@/lib/auth";
+import { apiFetch } from "@/lib/auth";
 
 interface Generation {
   id: string;
@@ -27,7 +27,7 @@ export default function HistorySidebar({ open, onClose, onSelect, refreshKey }: 
   const load = async () => {
     setLoading(true);
     try {
-      const res = await fetch("http://localhost:8000/generations", { headers: authHeaders(), credentials: "include" });
+      const res = await apiFetch("/generations");
       if (res.ok) setGenerations(await res.json());
     } catch {} finally {
       setLoading(false);
@@ -39,17 +39,14 @@ export default function HistorySidebar({ open, onClose, onSelect, refreshKey }: 
   }, [open, refreshKey]);
 
   const handleDelete = async (id: string) => {
-    const res = await fetch(`http://localhost:8000/generations/${id}`, {
-      method: "DELETE",
-      headers: authHeaders(), credentials: "include",
-    });
+    const res = await apiFetch(`/generations/${id}`, { method: "DELETE" });
     if (res.ok) setGenerations((prev) => prev.filter((g) => g.id !== id));
   };
 
   const handleArchive = async (id: string) => {
-    const res = await fetch(`http://localhost:8000/generations/${id}/status`, {
+    const res = await apiFetch(`/generations/${id}/status`, {
       method: "PATCH",
-      headers: { "Content-Type": "application/json", ...authHeaders() }, credentials: "include",
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ status: "archived" }),
     });
     if (res.ok) load();

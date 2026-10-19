@@ -68,6 +68,20 @@ class TestRefreshFlow:
             refresh_resp.cookies["refresh_token"] != original_refresh
         ), "refresh token was not rotated"
 
+    async def test_replayed_rotated_token_is_detected_as_reuse(self, client, test_user):
+        login_resp = await client.post(
+            "/auth/login",
+            json={"email": test_user["email"], "password": test_user["plain_password"]},
+        )
+        old_refresh = login_resp.cookies["refresh_token"]
+        assert (await client.post("/auth/refresh")).status_code == 200
+
+        client.cookies.clear()
+        client.cookies.set("refresh_token", old_refresh)
+        resp = await client.post("/auth/refresh")
+        assert resp.status_code == 401
+        assert "reused" in resp.json()["detail"].lower()
+
     async def test_reused_refresh_token_returns_401(self, client, test_user, db_pool):
         login_resp = await client.post(
             "/auth/login",

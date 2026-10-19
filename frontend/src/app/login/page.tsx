@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { Zap, Loader2, ArrowRight } from "lucide-react";
-// Cookie-based auth ?" token managed via HTTP-only cookie
+import { apiFetch } from "@/lib/auth";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -15,7 +15,7 @@ export default function LoginPage() {
   const [pageReady, setPageReady] = useState(false);
 
   useEffect(() => {
-    fetch("http://localhost:8000/profile", { credentials: "include" })
+    apiFetch("/profile")
       .then((r) => {
         if (r.ok) {
           router.replace("/");
@@ -38,10 +38,9 @@ export default function LoginPage() {
     setLoading(true);
 
     try {
-      const res = await fetch(`http://localhost:8000/auth/${mode}`, {
+      const res = await apiFetch(`/auth/${mode}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        credentials: "include",
         body: JSON.stringify({ email, password }),
       });
       const data = await res.json();

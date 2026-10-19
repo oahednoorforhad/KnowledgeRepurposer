@@ -16,7 +16,6 @@ from app.auth import (
 from app.repositories.refresh_token_repo import (
     create_refresh_token,
     get_refresh_token_by_hash,
-    get_valid_refresh_token,
     revoke_all_refresh_tokens,
     revoke_refresh_token,
     rotate_refresh_token,
@@ -33,8 +32,9 @@ class AuthRequest(BaseModel):
 
     @field_validator("email", mode="before")
     @classmethod
-    def normalize_email(cls, v: str) -> str:
-        return v.strip().lower()
+    def normalize_email(cls, v):
+        # Non-strings fall through to EmailStr validation (422) instead of a 500.
+        return v.strip().lower() if isinstance(v, str) else v
 
 
 class ChangePasswordRequest(BaseModel):
@@ -42,90 +42,57 @@ class ChangePasswordRequest(BaseModel):
     new_password: str = Field(min_length=10)
 
 
-@router.post("/register", status_code=status.HTTP_201_CREATED)
-async def register(body: AuthRequest, request: Request, response: Response):
-    allowed, retry_after = check_auth_rate_limit(request.client.host, "register")
+def _enforce_auth_rate_limit(request: Request, endpoint: str) -> None:
+    ip = request.client.host if request.client else "unknown"
+    allowed, retry_after = check_auth_rate_limit(ip, endpoint)
     if not allowed:
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail=f"Too many registration attempts. Retry after {retry_after} seconds.",
+            detail=f"Too many {endpoint} attempts. Retry after {retry_after} seconds.",
             headers={"Retry-After": str(retry_after)},
         )
-    existing = await get_user_by_email(body.email)
-    if existing:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Email already registered")
-    hashed = hash_password(body.password)
-    user = await create_user(body.email, hashed)
-    user_id = str(user["id"])
 
-    token = create_jwt(user_id)
 
-    raw_refresh = create_refresh_token_value()
-    refresh_hash = hash_refresh_token(raw_refresh)
-    refresh_expiry = datetime.now(timezone.utc) + timedelta(days=REFRESH_TOKEN_EXPIRY_DAYS)
-    await create_refresh_token(user_id, refresh_hash, refresh_expiry)
+def _refresh_expiry() -> datetime:
+    return datetime.now(timezone.utc) + timedelta(days=REFRESH_TOKEN_EXPIRY_DAYS)
 
+
+def _set_auth_cookies(response: Response, user_id: str, raw_refresh: str) -> dict:
     secure = os.getenv("COOKIE_SECURE", "false").lower() == "true"
-    response.set_cookie(
-        key="access_token",
-        value=token,
-        httponly=True,
-        samesite="lax",
-        secure=secure,
-        path="/",
-    )
+    common = {"httponly": True, "samesite": "lax", "secure": secure, "path": "/"}
+    response.set_cookie(key="access_token", value=create_jwt(user_id), **common)
     response.set_cookie(
         key="refresh_token",
         value=raw_refresh,
-        httponly=True,
-        samesite="lax",
-        secure=secure,
-        path="/",
+        max_age=REFRESH_TOKEN_EXPIRY_DAYS * 24 * 3600,
+        **common,
     )
-
     return {"message": "success", "user_id": user_id}
+
+
+async def _start_session(response: Response, user_id: str) -> dict:
+    raw_refresh = create_refresh_token_value()
+    await create_refresh_token(user_id, hash_refresh_token(raw_refresh), _refresh_expiry())
+    return _set_auth_cookies(response, user_id, raw_refresh)
+
+
+@router.post("/register", status_code=status.HTTP_201_CREATED)
+async def register(body: AuthRequest, request: Request, response: Response):
+    _enforce_auth_rate_limit(request, "register")
+    existing = await get_user_by_email(body.email)
+    if existing:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Email already registered")
+    user = await create_user(body.email, hash_password(body.password))
+    return await _start_session(response, str(user["id"]))
 
 
 @router.post("/login")
 async def login(body: AuthRequest, request: Request, response: Response):
-    allowed, retry_after = check_auth_rate_limit(request.client.host, "login")
-    if not allowed:
-        raise HTTPException(
-            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail=f"Too many login attempts. Retry after {retry_after} seconds.",
-            headers={"Retry-After": str(retry_after)},
-        )
+    _enforce_auth_rate_limit(request, "login")
     user = await get_user_by_email(body.email)
     if not user or not verify_password(body.password, user["hashed_password"]):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid email or password")
-    user_id = str(user["id"])
-
-    token = create_jwt(user_id)
-
-    raw_refresh = create_refresh_token_value()
-    refresh_hash = hash_refresh_token(raw_refresh)
-    refresh_expiry = datetime.now(timezone.utc) + timedelta(days=REFRESH_TOKEN_EXPIRY_DAYS)
-    await create_refresh_token(user_id, refresh_hash, refresh_expiry)
-
-    secure = os.getenv("COOKIE_SECURE", "false").lower() == "true"
-    response.set_cookie(
-        key="access_token",
-        value=token,
-        httponly=True,
-        samesite="lax",
-        secure=secure,
-        path="/",
-    )
-    response.set_cookie(
-        key="refresh_token",
-        value=raw_refresh,
-        httponly=True,
-        samesite="lax",
-        secure=secure,
-        path="/",
-    )
-
-    return {"message": "success", "user_id": user_id}
+    return await _start_session(response, str(user["id"]))
 
 
 @router.post("/refresh")
@@ -137,37 +104,15 @@ async def refresh(request: Request, response: Response):
             detail="Refresh token missing.",
         )
     token_hash = hash_refresh_token(raw_refresh_token)
-    valid = await get_valid_refresh_token(token_hash)
-    if valid:
-        user_id = str(valid["user_id"])
-        new_access = create_jwt(user_id)
-        new_raw_refresh = create_refresh_token_value()
-        new_hash = hash_refresh_token(new_raw_refresh)
-        new_expiry = datetime.now(timezone.utc) + timedelta(days=REFRESH_TOKEN_EXPIRY_DAYS)
-        await rotate_refresh_token(token_hash, new_hash, new_expiry)
+    new_raw_refresh = create_refresh_token_value()
+    rotated = await rotate_refresh_token(token_hash, hash_refresh_token(new_raw_refresh), _refresh_expiry())
+    if rotated:
+        return _set_auth_cookies(response, str(rotated["user_id"]), new_raw_refresh)
 
-        secure = os.getenv("COOKIE_SECURE", "false").lower() == "true"
-        response.set_cookie(
-            key="access_token",
-            value=new_access,
-            httponly=True,
-            samesite="lax",
-            secure=secure,
-            path="/",
-        )
-        response.set_cookie(
-            key="refresh_token",
-            value=new_raw_refresh,
-            httponly=True,
-            samesite="lax",
-            secure=secure,
-            path="/",
-        )
-
-        return {"message": "success", "user_id": user_id}
-
+    # Only a token that was explicitly revoked (rotated or logged out) counts as reuse;
+    # a merely expired token must not nuke the user's other sessions.
     existing = await get_refresh_token_by_hash(token_hash)
-    if existing:
+    if existing and existing["revoked_at"] is not None:
         await revoke_all_refresh_tokens(str(existing["user_id"]))
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
