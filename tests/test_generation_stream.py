@@ -8,6 +8,7 @@ import httpx
 import openai
 
 from app.services import llm
+from app.services.llm import VARIANT_SEPARATOR
 
 
 def _chunk(text=None, usage=None):
@@ -66,10 +67,64 @@ async def test_generate_endpoint_streams_ndjson_and_saves(client, auth_headers):
     events = [json.loads(line) for line in resp.text.splitlines()]
     assert [e["delta"] for e in events[:-1]] == ["Post ", "body"]
     assert events[-1]["done"] is True and events[-1]["model_used"] == "m"
-    assert events[-1]["generation_id"]
+    assert len(events[-1]["generation_ids"]) == 1
 
-    gen = await client.get(f"/generations/{events[-1]['generation_id']}", headers=auth_headers)
+    gen = await client.get(f"/generations/{events[-1]['generation_ids'][0]}", headers=auth_headers)
     assert gen.json()["generated_post"] == "Post body"
+
+
+async def test_generate_endpoint_saves_each_variant(client, auth_headers):
+    async def fake_stream(messages, api_key=None):
+        assert "Write 2 distinct versions" in messages[1]["content"]
+        yield {"delta": f"One\n{VARIANT_SEPARATOR}\nTwo"}
+        yield {"model_used": "m", "usage": {"input_tokens": 5, "output_tokens": 6}}
+
+    with (
+        mock.patch("main.get_profile", return_value={"name": "Tester"}),
+        mock.patch("main.llm_service.stream_post", fake_stream),
+    ):
+        resp = await client.post(
+            "/api/generate/linkedin-post",
+            json={"transcript": "src", "variants": 2},
+            headers=auth_headers,
+        )
+
+    ids = json.loads(resp.text.splitlines()[-1])["generation_ids"]
+    gens = [(await client.get(f"/generations/{i}", headers=auth_headers)).json() for i in ids]
+    assert [g["generated_post"] for g in gens] == ["One", "Two"]
+    assert [g["input_tokens"] for g in gens] == [5, None]
+
+
+async def test_generate_endpoint_single_variant_ignores_separator(client, auth_headers):
+    text = f"One\n{VARIANT_SEPARATOR}\nTwo"
+
+    async def fake_stream(messages, api_key=None):
+        yield {"delta": text}
+        yield {"model_used": "m", "usage": {}}
+
+    with (
+        mock.patch("main.get_profile", return_value={"name": "Tester"}),
+        mock.patch("main.llm_service.stream_post", fake_stream),
+    ):
+        resp = await client.post(
+            "/api/generate/linkedin-post",
+            json={"transcript": "src"},
+            headers=auth_headers,
+        )
+
+    ids = json.loads(resp.text.splitlines()[-1])["generation_ids"]
+    assert len(ids) == 1
+    gen = await client.get(f"/generations/{ids[0]}", headers=auth_headers)
+    assert gen.json()["generated_post"] == text
+
+
+async def test_generate_endpoint_rejects_too_many_variants(client, auth_headers):
+    resp = await client.post(
+        "/api/generate/linkedin-post",
+        json={"transcript": "src", "variants": 4},
+        headers=auth_headers,
+    )
+    assert resp.status_code == 422
 
 
 async def test_generate_endpoint_reports_llm_error_in_stream(client, auth_headers):

@@ -7,7 +7,7 @@ from dotenv import load_dotenv
 
 load_dotenv()  # before app imports: app.auth reads JWT_SECRET at import time
 from fastapi import FastAPI, HTTPException, UploadFile, File, Depends
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 
@@ -22,7 +22,7 @@ from app.routers.generation_router import router as generation_router
 from db.connection import get_pool, close_pool
 from fastapi.responses import JSONResponse, StreamingResponse
 from loguru import logger
-from app.services.llm import build_messages, count_tokens
+from app.services.llm import build_messages, count_tokens, split_variants
 from app.services.rate_limiter import check_rate_limit
 from app.middleware.logging import LoggingMiddleware
 
@@ -87,6 +87,7 @@ class GeneratePostRequest(BaseModel):
     api_key: str | None = None
     source_url: str | None = None
     source_type: str | None = None
+    variants: int = Field(1, ge=1, le=3)
 
 
 def determine_source_type(source: str) -> str:
@@ -254,7 +255,7 @@ async def generate_linkedin_post(request: GeneratePostRequest, user: dict = Depe
             detail="Please complete your profile (name is required) before generating posts."
         )
 
-    messages = build_messages(request.transcript, request.creative_direction, profile)
+    messages = build_messages(request.transcript, request.creative_direction, profile, request.variants)
 
     # Pre-LLM token check — guards against unbounded context consumption
     _token_count = count_tokens(messages)
@@ -275,7 +276,7 @@ async def generate_linkedin_post(request: GeneratePostRequest, user: dict = Depe
             headers={"Retry-After": str(_retry_after)},
         )
 
-    # Streams NDJSON: {"delta": text}* then {"done": true, "generation_id", "model_used"}
+    # Streams NDJSON: {"delta": text}* then {"done": true, "generation_ids", "model_used"}
     # or {"error": message}. Errors after streaming starts can't change the HTTP status.
     async def events():
         post, final = "", {}
@@ -295,24 +296,32 @@ async def generate_linkedin_post(request: GeneratePostRequest, user: dict = Depe
             return
 
         usage = final.get("usage", {})
+        generation_ids = []
+        if request.variants > 1:
+            posts = split_variants(post)
+            if len(posts) != request.variants:
+                logger.warning(f"Requested {request.variants} versions, model returned {len(posts)}")
+        else:
+            posts = [post.strip()] if post.strip() else []
         try:
-            gen = await create_generation(
-                user_id=user["id"],
-                source_url=request.source_url,
-                source_type=request.source_type or "youtube",
-                raw_content=request.transcript[:50000],
-                creative_direction=request.creative_direction,
-                generated_post=post,
-                model_used=final.get("model_used"),
-                input_tokens=usage.get("input_tokens"),
-                output_tokens=usage.get("output_tokens"),
-            )
-            generation_id = str(gen["id"])
+            # One history row per version; the call's token usage is recorded on the first.
+            for i, variant in enumerate(posts):
+                gen = await create_generation(
+                    user_id=user["id"],
+                    source_url=request.source_url,
+                    source_type=request.source_type or "youtube",
+                    raw_content=request.transcript[:50000],
+                    creative_direction=request.creative_direction,
+                    generated_post=variant,
+                    model_used=final.get("model_used"),
+                    input_tokens=usage.get("input_tokens") if i == 0 else None,
+                    output_tokens=usage.get("output_tokens") if i == 0 else None,
+                )
+                generation_ids.append(str(gen["id"]))
         except Exception as e:
             logger.warning(f"Failed to save generation to DB: {e}")
-            generation_id = None
 
-        yield _ndjson({"done": True, "generation_id": generation_id, "model_used": final.get("model_used")})
+        yield _ndjson({"done": True, "generation_ids": generation_ids, "model_used": final.get("model_used")})
 
     return StreamingResponse(events(), media_type="application/x-ndjson")
 

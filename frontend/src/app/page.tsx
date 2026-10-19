@@ -11,7 +11,20 @@ import { readNdjson } from "@/lib/ndjson";
 import SettingsDrawer from "@/components/SettingsDrawer";
 import HistorySidebar from "@/components/HistorySidebar";
 
-type GenerateEvent = { delta?: string; done?: boolean; generation_id?: string | null; error?: string };
+const VARIANT_SEPARATOR = "---VARIANT---"; // must match app/services/llm.py
+
+function splitVersions(text: string) {
+  // Drop a separator that is still arriving mid-stream (e.g. "---VAR") so it never renders.
+  for (let n = VARIANT_SEPARATOR.length - 1; n >= 3; n--) {
+    if (text.endsWith(VARIANT_SEPARATOR.slice(0, n))) {
+      text = text.slice(0, -n);
+      break;
+    }
+  }
+  return text.split(VARIANT_SEPARATOR).map((v) => v.trim()).filter(Boolean);
+}
+
+type GenerateEvent ={ delta?: string; done?: boolean; generation_ids?: string[]; error?: string };
 
 function cn(...classes: (string | undefined | false)[]) {
   return classes.filter(Boolean).join(" ");
@@ -68,6 +81,7 @@ export default function Home() {
   const [url, setUrl] = useState("");
   const [pdfFile, setPdfFile] = useState<File | null>(null);
   const [prompt, setPrompt] = useState("");
+  const [variants, setVariants] = useState<1 | 3>(1);
   const [loading, setLoading] = useState(false);
   const [post, setPost] = useState("");
   const [error, setError] = useState("");
@@ -75,6 +89,12 @@ export default function Home() {
   const [historyOpen, setHistoryOpen] = useState(false);
   const [refreshHistory, setRefreshHistory] = useState(0);
   const [profileComplete, setProfileComplete] = useState(false);
+  const [activeVersion, setActiveVersion] = useState(0);
+
+  // While streaming, versions appear one by one as the separator arrives.
+  const versions = splitVersions(post);
+  const activeIndex = Math.min(activeVersion, Math.max(versions.length - 1, 0));
+  const shown = versions[activeIndex] ?? "";
 
   useEffect(() => {
     apiFetch("/profile")
@@ -115,6 +135,7 @@ export default function Home() {
     setError("");
     setLoading(true);
     setPost("");
+    setActiveVersion(0);
 
     try {
       let content: string;
@@ -158,6 +179,7 @@ export default function Home() {
           transcript: content,
           source_url: sourceUrl,
           source_type: sourceType,
+          variants,
           ...(prompt ? { creative_direction: prompt } : {}),
         }),
       });
@@ -168,18 +190,24 @@ export default function Home() {
       }
 
       let streamError = "";
-      let finished = false;
+      let text = "";
+      let saved = -1; // stays -1 until the done event arrives
       await readNdjson<GenerateEvent>(generateRes, (event) => {
-        if (event.delta) setPost((prev) => prev + event.delta);
-        else if (event.error) streamError = event.error;
+        if (event.delta) {
+          text += event.delta;
+          setPost((prev) => prev + event.delta);
+        } else if (event.error) streamError = event.error;
         else if (event.done) {
-          finished = true;
-          if (event.generation_id) setRefreshHistory((n) => n + 1);
-          else setError("Post generated but not saved to history.");
+          saved = event.generation_ids?.length ?? 0;
+          if (saved) setRefreshHistory((n) => n + 1);
         }
       });
       if (streamError) throw new Error(streamError);
-      if (!finished) throw new Error("Generation was interrupted. Please retry.");
+      if (saved < 0) throw new Error("Generation was interrupted. Please retry.");
+      // The backend keeps a single-version post whole, so only multi-version requests count tabs.
+      const expected = variants > 1 ? splitVersions(text).length : Math.min(splitVersions(text).length, 1);
+      if (saved === 0 && expected > 0) setError("Post generated but not saved to history.");
+      else if (saved < expected) setError("Some versions weren't saved to history.");
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : "An unexpected error occurred.";
       setError(message);
@@ -367,6 +395,17 @@ export default function Home() {
             />
           </div>
 
+          <label className="flex items-center gap-2.5 text-[12.5px] text-white/50 font-light cursor-pointer select-none">
+            <input
+              id="variants-toggle"
+              type="checkbox"
+              checked={variants === 3}
+              onChange={(e) => setVariants(e.target.checked ? 3 : 1)}
+              className="w-3.5 h-3.5 accent-[oklch(0.62_0.22_255)]"
+            />
+            Write 3 versions with different hooks
+          </label>
+
           {error && (
             <div className="flex items-start gap-2.5 p-3 rounded-xl bg-red-500/8 border border-red-500/20">
               <span className="text-red-400 text-[13px] font-light leading-relaxed">{error}</span>
@@ -399,8 +438,27 @@ export default function Home() {
               <Sparkles className="w-3.5 h-3.5 text-[oklch(0.72_0.18_255)]" />
               <Label className="!text-white/35">Generated Post</Label>
             </div>
-            {post && !loading && <CopyButton text={post} />}
+            {shown && !loading && <CopyButton text={shown} />}
           </div>
+
+          {versions.length > 1 && (
+            <div role="tablist" className="flex gap-1.5 px-6 pt-4">
+              {versions.map((_, i) => (
+                <button
+                  key={i}
+                  role="tab"
+                  aria-selected={i === activeIndex}
+                  onClick={() => setActiveVersion(i)}
+                  className={cn(
+                    "h-7 px-3 rounded-lg text-[12px] font-medium transition-all duration-200",
+                    i === activeIndex ? "bg-white/10 text-white" : "text-white/35 hover:text-white/60"
+                  )}
+                >
+                  Version {i + 1}
+                </button>
+              ))}
+            </div>
+          )}
 
           <div className="flex-1 px-6 py-5 overflow-y-auto">
             {loading && !post ? (
@@ -420,9 +478,9 @@ export default function Home() {
                 <SkeletonBlock className="h-3 w-4/5" />
                 <SkeletonBlock className="h-3 w-2/3" />
               </div>
-            ) : post ? (
+            ) : shown ? (
               <div className="md-output">
-                <ReactMarkdown>{post}</ReactMarkdown>
+                <ReactMarkdown>{shown}</ReactMarkdown>
               </div>
             ) : (
               <div className="flex flex-col items-center justify-center h-full min-h-[300px] gap-4 select-none">
