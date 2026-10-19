@@ -2,6 +2,12 @@ from datetime import timedelta
 
 from db.connection import acquire, release
 
+# History list rows: everything except raw_content, which can be ~50KB of scraped text per row.
+SUMMARY_COLUMNS = (
+    "id, user_id, source_url, source_type, creative_direction, generated_post, model_used, "
+    "input_tokens, output_tokens, estimated_cost_usd, status, created_at"
+)
+
 
 async def create_generation(
     user_id: str,
@@ -35,7 +41,7 @@ async def list_generations(user_id: str) -> list[dict]:
     conn = await acquire()
     try:
         rows = await conn.fetch(
-            "SELECT * FROM generations WHERE user_id = $1::uuid ORDER BY created_at DESC",
+            f"SELECT {SUMMARY_COLUMNS} FROM generations WHERE user_id = $1::uuid ORDER BY created_at DESC",
             user_id,
         )
         return [dict(r) for r in rows]
@@ -59,7 +65,7 @@ async def update_status(generation_id: str, user_id: str, status: str) -> dict |
     conn = await acquire()
     try:
         row = await conn.fetchrow(
-            "UPDATE generations SET status = $3 WHERE id = $1::uuid AND user_id = $2::uuid RETURNING *",
+            f"UPDATE generations SET status = $3 WHERE id = $1::uuid AND user_id = $2::uuid RETURNING {SUMMARY_COLUMNS}",
             generation_id, user_id, status,
         )
         return dict(row) if row else None

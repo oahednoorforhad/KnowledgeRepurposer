@@ -147,3 +147,9 @@ async def test_invalid_generation_id_returns_422(client, auth_headers):
         "/generations/not-a-uuid/refine", json={"instruction": "x"}, headers=auth_headers
     )
     assert resp.status_code == 422
+
+
+async def test_history_list_omits_raw_content(client, auth_headers, generation):
+    rows = (await client.get("/generations", headers=auth_headers)).json()
+    assert rows and "raw_content" not in rows[0]
+    assert rows[0]["generated_post"] == "Original post"
