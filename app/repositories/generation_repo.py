@@ -1,3 +1,5 @@
+from datetime import timedelta
+
 from db.connection import acquire, release
 
 
@@ -66,13 +68,17 @@ async def update_status(generation_id: str, user_id: str, status: str) -> dict |
 
 
 RAW_CONTENT_LIMIT = 50000
+CACHE_TTL = timedelta(hours=24)
 
 
 async def get_cached_source(user_id: str, source_url: str) -> dict | None:
     """Latest untruncated content this user already scraped from source_url.
 
-    Scoped per user: raw_content comes from the client on generate, so a shared
-    cache would let one user plant content for everyone else.
+    Only rows newer than CACHE_TTL count, so a changed page gets re-scraped.
+
+    raw_content is the client-supplied transcript sent to generate, not
+    necessarily what was scraped. Scoping per user limits that to the user's
+    own text; a shared cache would let one user plant content for everyone else.
     """
     conn = await acquire()
     try:
@@ -81,9 +87,10 @@ async def get_cached_source(user_id: str, source_url: str) -> dict | None:
             SELECT raw_content, source_type FROM generations
             WHERE user_id = $1::uuid AND source_url = $2
               AND raw_content IS NOT NULL AND length(raw_content) < $3
+              AND created_at > now() - $4::interval
             ORDER BY created_at DESC LIMIT 1
             """,
-            user_id, source_url, RAW_CONTENT_LIMIT,
+            user_id, source_url, RAW_CONTENT_LIMIT, CACHE_TTL,
         )
         return dict(row) if row else None
     finally:
