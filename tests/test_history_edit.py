@@ -136,3 +136,14 @@ async def test_refine_of_deleted_generation_reports_error(client, auth_headers, 
     with mock.patch("main.update_post", return_value=None):
         events = await _refine_events(client, auth_headers, generation, ["New post"])
     assert "deleted" in events[-1]["error"]
+
+
+async def test_invalid_generation_id_returns_422(client, auth_headers):
+    resp = await client.patch(
+        "/generations/not-a-uuid", json={"generated_post": "x"}, headers=auth_headers
+    )
+    assert resp.status_code == 422
+    resp = await client.post(
+        "/generations/not-a-uuid/refine", json={"instruction": "x"}, headers=auth_headers
+    )
+    assert resp.status_code == 422
