@@ -11,7 +11,7 @@ import { readNdjson } from "@/lib/ndjson";
 import SettingsDrawer from "@/components/SettingsDrawer";
 import HistorySidebar from "@/components/HistorySidebar";
 
-type GenerateEvent = { delta?: string; done?: boolean; generation_id?: string | null; error?: string };
+type GenerateEvent = { delta?: string; done?: boolean; generation_ids?: string[]; error?: string };
 
 function cn(...classes: (string | undefined | false)[]) {
   return classes.filter(Boolean).join(" ");
@@ -68,6 +68,7 @@ export default function Home() {
   const [url, setUrl] = useState("");
   const [pdfFile, setPdfFile] = useState<File | null>(null);
   const [prompt, setPrompt] = useState("");
+  const [variants, setVariants] = useState<1 | 3>(1);
   const [loading, setLoading] = useState(false);
   const [post, setPost] = useState("");
   const [error, setError] = useState("");
@@ -158,6 +159,7 @@ export default function Home() {
           transcript: content,
           source_url: sourceUrl,
           source_type: sourceType,
+          variants,
           ...(prompt ? { creative_direction: prompt } : {}),
         }),
       });
@@ -174,7 +176,7 @@ export default function Home() {
         else if (event.error) streamError = event.error;
         else if (event.done) {
           finished = true;
-          if (event.generation_id) setRefreshHistory((n) => n + 1);
+          if (event.generation_ids?.length) setRefreshHistory((n) => n + 1);
           else setError("Post generated but not saved to history.");
         }
       });
@@ -366,6 +368,17 @@ export default function Home() {
               onChange={(e) => setPrompt(e.target.value)}
             />
           </div>
+
+          <label className="flex items-center gap-2.5 text-[12.5px] text-white/50 font-light cursor-pointer select-none">
+            <input
+              id="variants-toggle"
+              type="checkbox"
+              checked={variants === 3}
+              onChange={(e) => setVariants(e.target.checked ? 3 : 1)}
+              className="w-3.5 h-3.5 accent-[oklch(0.62_0.22_255)]"
+            />
+            Write 3 versions with different hooks
+          </label>
 
           {error && (
             <div className="flex items-start gap-2.5 p-3 rounded-xl bg-red-500/8 border border-red-500/20">
