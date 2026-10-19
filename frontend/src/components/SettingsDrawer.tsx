@@ -27,13 +27,18 @@ export default function SettingsDrawer({ onClose, onSaved, onLogout }: Props) {
   });
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [loadFailed, setLoadFailed] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
 
   useEffect(() => {
+    let cancelled = false;
     apiFetch("/profile")
-      .then((r) => r.json())
+      .then((r) => {
+        if (!r.ok) throw new Error();
+        return r.json();
+      })
       .then((data) => {
-        if (data && !data.detail) {
+        if (!cancelled && data) {
           setForm({
             name: data.name || "",
             job_title: data.job_title || "",
@@ -45,8 +50,10 @@ export default function SettingsDrawer({ onClose, onSaved, onLogout }: Props) {
           });
         }
       })
-      .catch(() => {})
-      .finally(() => setLoading(false));
+      // A failed load leaves an empty form; block Save so it can't blank the profile.
+      .catch(() => { if (!cancelled) setLoadFailed(true); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
   }, []);
 
   const handleSave = async () => {
@@ -81,6 +88,11 @@ export default function SettingsDrawer({ onClose, onSaved, onLogout }: Props) {
           <div className="flex justify-center py-12"><Loader2 className="w-5 h-5 animate-spin text-white/40" /></div>
         ) : (
           <div className="flex flex-col gap-3">
+            {loadFailed && (
+              <p role="alert" className="text-[12px] text-red-400">
+                Couldn&apos;t load your profile. Close and reopen to retry; saving is disabled.
+              </p>
+            )}
             {(["name", "job_title", "niche", "tone", "linkedin_headline", "bio", "sample_posts"] as const).map((field) => (
               <div key={field} className="flex flex-col gap-1">
                 <label className="text-[10px] uppercase tracking-[0.12em] font-semibold text-white/40">
@@ -113,7 +125,7 @@ export default function SettingsDrawer({ onClose, onSaved, onLogout }: Props) {
 
             <button
               onClick={handleSave}
-              disabled={saving || !form.name.trim()}
+              disabled={saving || loadFailed || !form.name.trim()}
               className="mt-3 w-full h-9 rounded-xl flex items-center justify-center gap-2 text-[13px] font-semibold bg-white text-[oklch(0.10_0.008_248)] hover:bg-white/92 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed transition-all"
             >
               {saving ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Saving...</>
