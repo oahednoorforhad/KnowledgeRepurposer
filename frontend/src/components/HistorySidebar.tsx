@@ -17,10 +17,9 @@ interface Generation {
 interface Props {
   onClose: () => void;
   onSelect: (gen: Generation) => void;
-  refreshKey: number;
 }
 
-export default function HistorySidebar({ onClose, onSelect, refreshKey }: Props) {
+export default function HistorySidebar({ onClose, onSelect }: Props) {
   const [generations, setGenerations] = useState<Generation[]>([]);
   const [loading, setLoading] = useState(true);
   const [busyIds, setBusyIds] = useState<Set<string>>(new Set());
@@ -44,7 +43,7 @@ export default function HistorySidebar({ onClose, onSelect, refreshKey }: Props)
       .catch(() => {})
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, [refreshKey]);
+  }, []);
 
   const handleDelete = (id: string) => withBusy(id, async () => {
     const res = await apiFetch(`/generations/${id}`, { method: "DELETE" });
