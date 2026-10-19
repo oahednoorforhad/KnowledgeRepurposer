@@ -104,7 +104,7 @@ npm run dev
 
 ---
 
-## 🐳 Docker (full stack)
+## 🐳 Docker (API)
 
 ```bash
 cp .env.example .env
