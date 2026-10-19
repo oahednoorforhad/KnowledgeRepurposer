@@ -190,18 +190,24 @@ export default function Home() {
       }
 
       let streamError = "";
-      let finished = false;
+      let text = "";
+      let saved = -1; // stays -1 until the done event arrives
       await readNdjson<GenerateEvent>(generateRes, (event) => {
-        if (event.delta) setPost((prev) => prev + event.delta);
-        else if (event.error) streamError = event.error;
+        if (event.delta) {
+          text += event.delta;
+          setPost((prev) => prev + event.delta);
+        } else if (event.error) streamError = event.error;
         else if (event.done) {
-          finished = true;
-          if (event.generation_ids?.length) setRefreshHistory((n) => n + 1);
-          else setError("Post generated but not saved to history.");
+          saved = event.generation_ids?.length ?? 0;
+          if (saved) setRefreshHistory((n) => n + 1);
         }
       });
       if (streamError) throw new Error(streamError);
-      if (!finished) throw new Error("Generation was interrupted. Please retry.");
+      if (saved < 0) throw new Error("Generation was interrupted. Please retry.");
+      // The backend keeps a single-version post whole, so only multi-version requests count tabs.
+      const expected = variants > 1 ? splitVersions(text).length : Math.min(splitVersions(text).length, 1);
+      if (saved === 0 && expected > 0) setError("Post generated but not saved to history.");
+      else if (saved < expected) setError("Some versions weren't saved to history.");
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : "An unexpected error occurred.";
       setError(message);
