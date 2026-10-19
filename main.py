@@ -299,6 +299,8 @@ async def generate_linkedin_post(request: GeneratePostRequest, user: dict = Depe
         generation_ids = []
         if request.variants > 1:
             posts = split_variants(post)
+            if len(posts) != request.variants:
+                logger.warning(f"Requested {request.variants} versions, model returned {len(posts)}")
         else:
             posts = [post.strip()] if post.strip() else []
         try:
