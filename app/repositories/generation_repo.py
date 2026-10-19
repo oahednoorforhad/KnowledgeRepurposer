@@ -65,6 +65,18 @@ async def update_status(generation_id: str, user_id: str, status: str) -> dict |
         await release(conn)
 
 
+async def update_post(generation_id: str, user_id: str, generated_post: str) -> dict | None:
+    conn = await acquire()
+    try:
+        row = await conn.fetchrow(
+            "UPDATE generations SET generated_post = $3 WHERE id = $1::uuid AND user_id = $2::uuid RETURNING *",
+            generation_id, user_id, generated_post,
+        )
+        return dict(row) if row else None
+    finally:
+        await release(conn)
+
+
 async def delete_generation(generation_id: str, user_id: str) -> bool:
     conn = await acquire()
     try:
