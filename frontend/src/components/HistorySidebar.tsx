@@ -13,16 +13,16 @@ interface Generation {
   created_at: string;
 }
 
+// Mounted only while open, so each open starts fresh in the loading state.
 interface Props {
-  open: boolean;
   onClose: () => void;
   onSelect: (gen: Generation) => void;
   refreshKey: number;
 }
 
-export default function HistorySidebar({ open, onClose, onSelect, refreshKey }: Props) {
+export default function HistorySidebar({ onClose, onSelect, refreshKey }: Props) {
   const [generations, setGenerations] = useState<Generation[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [busyIds, setBusyIds] = useState<Set<string>>(new Set());
 
   // One status/delete request per item at a time.
@@ -36,19 +36,15 @@ export default function HistorySidebar({ open, onClose, onSelect, refreshKey }: 
     }
   };
 
-  const load = async () => {
-    setLoading(true);
-    try {
-      const res = await apiFetch("/generations");
-      if (res.ok) setGenerations(await res.json());
-    } catch {} finally {
-      setLoading(false);
-    }
-  };
-
   useEffect(() => {
-    if (open) load();
-  }, [open, refreshKey]);
+    let cancelled = false;
+    apiFetch("/generations")
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => { if (!cancelled && data) setGenerations(data); })
+      .catch(() => {})
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [refreshKey]);
 
   const handleDelete = (id: string) => withBusy(id, async () => {
     const res = await apiFetch(`/generations/${id}`, { method: "DELETE" });
@@ -61,7 +57,9 @@ export default function HistorySidebar({ open, onClose, onSelect, refreshKey }: 
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ status }),
     });
-    if (res.ok) await load();
+    if (!res.ok) return;
+    const updated: Generation = await res.json();
+    setGenerations((prev) => prev.map((g) => (g.id === id ? updated : g)));
   });
 
   const formatDate = (iso: string) => {
@@ -73,8 +71,6 @@ export default function HistorySidebar({ open, onClose, onSelect, refreshKey }: 
     const line = post.split("\n")[0];
     return line.length > 80 ? line.slice(0, 80) + "..." : line;
   };
-
-  if (!open) return null;
 
   return (
     <div className="fixed inset-0 z-50 flex justify-start">
