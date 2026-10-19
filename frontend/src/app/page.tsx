@@ -168,12 +168,17 @@ export default function Home() {
       }
 
       let streamError = "";
+      let finished = false;
       await readNdjson<GenerateEvent>(generateRes, (event) => {
         if (event.delta) setPost((prev) => prev + event.delta);
         else if (event.error) streamError = event.error;
-        else if (event.done && event.generation_id) setRefreshHistory((n) => n + 1);
+        else if (event.done) {
+          finished = true;
+          if (event.generation_id) setRefreshHistory((n) => n + 1);
+        }
       });
       if (streamError) throw new Error(streamError);
+      if (!finished) throw new Error("Generation was interrupted. Please retry.");
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : "An unexpected error occurred.";
       setError(message);
