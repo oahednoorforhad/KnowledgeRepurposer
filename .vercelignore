@@ -1,0 +1,14 @@
+# Never upload local secrets; production values live in Vercel env vars.
+.env
+.env.*
+!.env.example
+.venv
+__pycache__
+.pytest_cache
+.omo
+.puku
+.agents
+tests
+*.log
+frontend/node_modules
+frontend/.next
