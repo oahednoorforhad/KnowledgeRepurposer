@@ -36,7 +36,12 @@ flowchart LR
 - **Rate limiting** — 20 generations/hour per user (in-memory)
 - **Token tracking** — input/output token counts stored per generation in DB
 - **Request logging** — every HTTP request logged with method, path, status, duration via loguru
-- **Auth** — JWT-based user authentication with profile support
+- **Auth** — JWT access + refresh tokens in HttpOnly cookies, with rotation and reuse detection
+- **Streaming** — posts stream token-by-token (NDJSON) instead of blocking the request
+- **3 versions** — optionally write three posts with different hook styles and pick one
+- **Edit & refine** — edit any saved post, or ask the AI to rewrite it ("Shorter", "More casual", or your own instruction)
+- **Your voice** — paste past posts in Settings and the AI matches their style
+- **Scrape cache** — re-using a URL you already scraped skips the download
 - **Modern UI** — glass-morphism cards, dark theme, micro-animations
 
 ---
@@ -145,13 +150,21 @@ curl http://127.0.0.1:8000/health
 | Endpoint | Method | Body | Returns |
 |----------|--------|------|---------|
 | `/health` | GET | — | `{"status": "ok", "database": "connected"}` |
-| `/api/auth/register` | POST | `{email, password}` | `{token}` |
-| `/api/auth/login` | POST | `{email, password}` | `{token}` |
-| `/api/scrape` | POST | `{"url": "<source>"}` | `{"content": "...", "source_type": "youtube\|article\|pdf\|markdown"}` |
+| `/auth/register`, `/auth/login` | POST | `{email, password}` | Sets `access_token` + `refresh_token` cookies |
+| `/auth/refresh` | POST | — (refresh cookie) | Rotates both cookies |
+| `/auth/logout` | POST | — | Revokes the session, clears cookies |
+| `/api/scrape` | POST | `{"url": "<source>"}` | `{"content", "source_type", "metadata"}` (`metadata.cached` when served from cache) |
 | `/api/scrape/pdf-upload` | POST (multipart) | `file` (PDF ≤ 10MB) | Same as above, `source_type` always `"pdf"` |
-| `/api/generate/linkedin-post` | POST | `{"transcript": "...", "creative_direction": "optional"}` | `{"post": "...", "generation_id": "...", "model_used": "..."}` |
-| `/api/profile` | GET/PUT | — / `{name, bio, ...}` | Profile object |
-| `/api/generations` | GET | — | List of past generations |
+| `/api/generate/linkedin-post` | POST | `{"transcript", "creative_direction"?, "variants"?: 1-3, "source_url"?, "source_type"?}` | NDJSON stream (see below) |
+| `/generations` | GET | — | List of past generations |
+| `/generations/{id}` | GET / PATCH / DELETE | PATCH: `{"generated_post"}` | Generation object / 204 |
+| `/generations/{id}/status` | PATCH | `{"status": "draft\|published\|archived"}` | Generation object |
+| `/generations/{id}/refine` | POST | `{"instruction"}` | NDJSON stream; the rewrite replaces the saved post |
+| `/profile` | GET / PUT | `{name, job_title, niche, tone, linkedin_headline, bio, sample_posts}` | Profile object |
+
+Streaming endpoints send one JSON object per line: `{"delta": "..."}` for each text chunk, then
+`{"done": true, "model_used", "generation_ids" | "generation_id"}`, or `{"error": "..."}` if generation fails mid-stream.
+With `variants > 1`, versions are separated by a `---VARIANT---` line.
 
 Rate limit: **20 generations/hour** per authenticated user.
 
