@@ -56,3 +56,10 @@ CREATE INDEX IF NOT EXISTS idx_refresh_tokens_token_hash ON refresh_tokens(token
 CREATE INDEX IF NOT EXISTS idx_refresh_tokens_expires_at ON refresh_tokens(expires_at);
 
 ALTER TABLE user_profiles ADD COLUMN IF NOT EXISTS sample_posts TEXT;
+
+-- Supabase exposes public tables through its Data API with the public anon key.
+-- RLS with no policies denies that path; the backend's postgres role bypasses RLS.
+ALTER TABLE users          ENABLE ROW LEVEL SECURITY;
+ALTER TABLE user_profiles  ENABLE ROW LEVEL SECURITY;
+ALTER TABLE generations    ENABLE ROW LEVEL SECURITY;
+ALTER TABLE refresh_tokens ENABLE ROW LEVEL SECURITY;
