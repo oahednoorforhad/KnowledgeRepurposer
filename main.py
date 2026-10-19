@@ -1,6 +1,7 @@
 import json
 import os
 import urllib.parse
+import uuid
 import re
 
 from dotenv import load_dotenv
@@ -355,7 +356,8 @@ class RefineRequest(BaseModel):
 
 
 @app.post("/generations/{generation_id}/refine")
-async def refine_generation(generation_id: str, request: RefineRequest, user: dict = Depends(require_current_user)):
+async def refine_generation(generation_id: uuid.UUID, request: RefineRequest, user: dict = Depends(require_current_user)):
+    generation_id = str(generation_id)
     gen = await get_generation(generation_id, user["id"])
     if gen is None:
         raise HTTPException(status_code=404, detail="Generation not found")
