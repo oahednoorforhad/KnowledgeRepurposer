@@ -193,6 +193,7 @@ export default function Home() {
   };
 
   const handleGenerate = async () => {
+    if (loading || refining) return;
     if (inputMode === "url" && !url) {
       setError("Please paste a YouTube URL or article link to continue.");
       return;
@@ -492,11 +493,11 @@ export default function Home() {
           <button
             id="generate-btn"
             onClick={handleGenerate}
-            disabled={loading}
+            disabled={loading || refining}
             className={cn(
               "w-full h-11 rounded-xl flex items-center justify-center gap-2",
               "text-[13.5px] font-semibold tracking-[-0.01em] transition-all duration-200",
-              loading
+              loading || refining
                 ? "bg-white/8 text-white/30 cursor-not-allowed"
                 : "bg-white text-[oklch(0.10_0.008_248)] hover:bg-white/92 active:scale-[0.98] glow-hover"
             )}
@@ -520,8 +521,9 @@ export default function Home() {
                 {activeId && (
                   <button
                     onClick={() => { setDraft(shown); setEditing(true); }}
+                    disabled={refining}
                     title="Edit post"
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-white/5 text-white/50 border border-white/10 hover:bg-white/10 hover:text-white/80 transition-all duration-200"
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-white/5 text-white/50 border border-white/10 hover:bg-white/10 hover:text-white/80 disabled:opacity-50 transition-all duration-200"
                   >
                     <Pencil className="w-3.5 h-3.5" /> Edit
                   </button>
@@ -539,6 +541,7 @@ export default function Home() {
                   role="tab"
                   aria-selected={i === activeIndex}
                   onClick={() => { setActiveVersion(i); setEditing(false); }}
+                  disabled={refining}
                   className={cn(
                     "h-7 px-3 rounded-lg text-[12px] font-medium transition-all duration-200",
                     i === activeIndex ? "bg-white/10 text-white" : "text-white/35 hover:text-white/60"
@@ -649,6 +652,7 @@ export default function Home() {
         open={historyOpen}
         onClose={() => setHistoryOpen(false)}
         onSelect={(gen) => {
+          if (refining) return;
           setPost(gen.generated_post);
           setActiveVersion(0);
           setGenerationIds([gen.id]);
