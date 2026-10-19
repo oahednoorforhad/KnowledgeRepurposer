@@ -51,3 +51,12 @@ async def test_cannot_edit_another_users_post(client, db_pool, generation):
     finally:
         async with db_pool.acquire() as conn:
             await conn.execute("DELETE FROM users WHERE id = $1::uuid", other["id"])
+
+
+def test_refine_messages_include_post_and_instruction():
+    from app.services.llm import build_refine_messages
+
+    system, user = build_refine_messages("My post", "  make it shorter ", {"name": "T"})
+    assert system["role"] == "system" and "T" in system["content"]
+    assert "My post" in user["content"]
+    assert user["content"].endswith("Instruction:\nmake it shorter")

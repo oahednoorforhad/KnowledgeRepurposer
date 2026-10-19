@@ -76,6 +76,18 @@ def build_messages(
     ]
 
 
+def build_refine_messages(post: str, instruction: str, profile: dict | None = None) -> list[dict]:
+    user_content = (
+        "Here is my current LinkedIn post. Rewrite it applying the instruction below, "
+        "keeping ALL rules from your system instructions. Output only the rewritten post.\n\n"
+        f"{post}\n\n---\nInstruction:\n{instruction.strip()}"
+    )
+    return [
+        {"role": "system", "content": build_prompt(profile)},
+        {"role": "user", "content": user_content},
+    ]
+
+
 @retry(
     stop=stop_after_attempt(3),
     wait=wait_exponential(multiplier=1, min=2, max=10),
