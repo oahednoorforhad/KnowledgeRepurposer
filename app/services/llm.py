@@ -59,7 +59,7 @@ def build_messages(
     ]
 
 
-@retry(
+_transient_retry = retry(
     stop=stop_after_attempt(3),
     wait=wait_exponential(multiplier=1, min=2, max=10),
     retry=retry_if_exception_type((
@@ -70,6 +70,21 @@ def build_messages(
     before_sleep=before_sleep_log(logging.getLogger("tenacity"), logging.WARNING),
     reraise=True,
 )
+
+
+@_transient_retry
+async def _open_stream_with_retry(client, model: str, messages: list[dict], temperature: float):
+    """Open a streaming completion, retrying transient errors before any token is sent."""
+    return await client.chat.completions.create(
+        model=model,
+        messages=messages,
+        temperature=temperature,
+        stream=True,
+        stream_options={"include_usage": True},
+    )
+
+
+@_transient_retry
 def _call_with_retry(client, model: str, messages: list[dict], temperature: float):
     """Call the OpenRouter API with exponential backoff retry on transient errors."""
     return client.chat.completions.create(
@@ -82,6 +97,49 @@ def _call_with_retry(client, model: str, messages: list[dict], temperature: floa
 class LLMService:
     def __init__(self, api_key: str | None = None):
         self.default_api_key = api_key
+
+    @traceable(name="Stream LinkedIn Post")
+    async def stream_post(self, messages: list[dict], api_key: str | None = None):
+        """Yield {"delta": text} chunks, then a final {"model_used": ..., "usage": ...}.
+
+        Falls back to the next model only if one fails before producing any text;
+        once tokens are flowing, an error propagates to the caller.
+        """
+        key = api_key or self.default_api_key
+        if not key:
+            raise ValueError("OpenAI API key is required")
+
+        client = wrappers.wrap_openai(openai.AsyncOpenAI(
+            api_key=key,
+            base_url="https://openrouter.ai/api/v1"
+        ))
+
+        for model in (PRIMARY_MODEL, FALLBACK_MODEL):
+            try:
+                stream = await _open_stream_with_retry(client, model, messages, temperature=0.7)
+            except (openai.NotFoundError, openai.RateLimitError, openai.BadRequestError):
+                continue
+
+            usage: dict = {"input_tokens": None, "output_tokens": None}
+            produced = False
+            async for chunk in stream:
+                if chunk.usage:
+                    usage = {
+                        "input_tokens": chunk.usage.prompt_tokens,
+                        "output_tokens": chunk.usage.completion_tokens,
+                    }
+                text = chunk.choices[0].delta.content if chunk.choices else None
+                if text:
+                    produced = True
+                    yield {"delta": text}
+            if produced:
+                yield {"model_used": model, "usage": usage}
+                return
+
+        raise RuntimeError(
+            "All models are currently unavailable or rate-limited. "
+            "Please retry in a moment."
+        )
 
     @traceable(name="Generate LinkedIn Post")
     def generate_linkedin_post(
