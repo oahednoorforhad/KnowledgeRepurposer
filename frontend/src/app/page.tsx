@@ -12,6 +12,7 @@ import SettingsDrawer from "@/components/SettingsDrawer";
 import HistorySidebar from "@/components/HistorySidebar";
 
 const VARIANT_SEPARATOR = "---VARIANT---"; // must match app/services/llm.py
+const REFINE_PRESETS = ["Shorter", "More casual", "Stronger hook"];
 
 function splitVersions(text: string) {
   // Drop a separator that is still arriving mid-stream (e.g. "---VAR") so it never renders.
@@ -108,6 +109,43 @@ export default function Home() {
       parts[index] = text;
       return parts.join(`\n${VARIANT_SEPARATOR}\n`);
     });
+
+  const [refining, setRefining] = useState(false);
+  const [refineText, setRefineText] = useState("");
+
+  const handleRefine = async (instruction: string) => {
+    const index = activeIndex;
+    const original = shown;
+    setError("");
+    setRefining(true);
+    try {
+      const res = await apiFetch(`/generations/${activeId}/refine`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ instruction }),
+      });
+      if (!res.ok) {
+        const errData = await res.json().catch(() => null);
+        throw new Error(errData?.detail || "Failed to refine post.");
+      }
+      let text = "";
+      let streamError = "";
+      await readNdjson<GenerateEvent>(res, (event) => {
+        if (event.delta) {
+          text += event.delta;
+          replaceVersion(index, text);
+        } else if (event.error) streamError = event.error;
+      });
+      if (streamError) throw new Error(streamError);
+      setRefineText("");
+      setRefreshHistory((n) => n + 1);
+    } catch (err: unknown) {
+      replaceVersion(index, original);
+      setError(err instanceof Error ? err.message : "Failed to refine post.");
+    } finally {
+      setRefining(false);
+    }
+  };
 
   const handleSaveEdit = async () => {
     setSavingEdit(true);
@@ -567,6 +605,32 @@ export default function Home() {
               </div>
             )}
           </div>
+
+          {shown && activeId && !loading && !editing && (
+            <div className="flex flex-wrap items-center gap-1.5 px-6 py-4 border-t border-white/[0.06]">
+              {REFINE_PRESETS.map((preset) => (
+                <button
+                  key={preset}
+                  onClick={() => handleRefine(preset)}
+                  disabled={refining}
+                  className="h-7 px-3 rounded-lg text-[12px] text-white/50 bg-white/5 border border-white/10 hover:bg-white/10 hover:text-white/80 disabled:opacity-50 transition-all"
+                >{preset}</button>
+              ))}
+              <form
+                className="flex-1 min-w-[160px]"
+                onSubmit={(e) => { e.preventDefault(); if (refineText.trim()) handleRefine(refineText); }}
+              >
+                <input
+                  aria-label="Custom refine instruction"
+                  placeholder={refining ? "Refining…" : "Or tell the AI what to change, then Enter"}
+                  value={refineText}
+                  onChange={(e) => setRefineText(e.target.value)}
+                  disabled={refining}
+                  className="w-full h-7 px-3 rounded-lg text-[12px] text-white/80 placeholder-white/20 bg-white/5 border border-white/10 outline-none focus:border-white/20 disabled:opacity-50"
+                />
+              </form>
+            </div>
+          )}
         </GlassCard>
       </div>
 
