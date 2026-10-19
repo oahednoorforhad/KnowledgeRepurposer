@@ -7,8 +7,11 @@ import {
   Sparkles, ArrowRight, Loader2, PlaySquare, Copy, Check, Zap, FileUp, Link2, X, Settings, Clock,
 } from "lucide-react";
 import { apiFetch } from "@/lib/auth";
+import { readNdjson } from "@/lib/ndjson";
 import SettingsDrawer from "@/components/SettingsDrawer";
 import HistorySidebar from "@/components/HistorySidebar";
+
+type GenerateEvent = { delta?: string; done?: boolean; generation_id?: string | null; error?: string };
 
 function cn(...classes: (string | undefined | false)[]) {
   return classes.filter(Boolean).join(" ");
@@ -164,9 +167,13 @@ export default function Home() {
         throw new Error(errData?.detail || "Failed to generate post.");
       }
 
-      const data = await generateRes.json();
-      setPost(data.post);
-      if (data.generation_id) setRefreshHistory((n) => n + 1);
+      let streamError = "";
+      await readNdjson<GenerateEvent>(generateRes, (event) => {
+        if (event.delta) setPost((prev) => prev + event.delta);
+        else if (event.error) streamError = event.error;
+        else if (event.done && event.generation_id) setRefreshHistory((n) => n + 1);
+      });
+      if (streamError) throw new Error(streamError);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : "An unexpected error occurred.";
       setError(message);
@@ -386,11 +393,11 @@ export default function Home() {
               <Sparkles className="w-3.5 h-3.5 text-[oklch(0.72_0.18_255)]" />
               <Label className="!text-white/35">Generated Post</Label>
             </div>
-            {post && <CopyButton text={post} />}
+            {post && !loading && <CopyButton text={post} />}
           </div>
 
           <div className="flex-1 px-6 py-5 overflow-y-auto">
-            {loading ? (
+            {loading && !post ? (
               <div className="flex flex-col gap-3 pt-1">
                 <SkeletonBlock className="h-3.5 w-2/3" />
                 <SkeletonBlock className="h-3 w-5/6" />
