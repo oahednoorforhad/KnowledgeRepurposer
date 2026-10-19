@@ -14,28 +14,32 @@ interface Profile {
   sample_posts: string;
 }
 
+// Mounted only while open, so each open reloads the profile.
 interface Props {
-  open: boolean;
   onClose: () => void;
   onSaved: (profile: Profile) => void;
   onLogout: () => void;
 }
 
-export default function SettingsDrawer({ open, onClose, onSaved, onLogout }: Props) {
+export default function SettingsDrawer({ onClose, onSaved, onLogout }: Props) {
   const [form, setForm] = useState<Profile>({
     name: "", job_title: "", niche: "", tone: "", linkedin_headline: "", bio: "", sample_posts: "",
   });
   const [saving, setSaving] = useState(false);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [loadFailed, setLoadFailed] = useState(false);
+  const [saveError, setSaveError] = useState("");
   const [loggingOut, setLoggingOut] = useState(false);
 
   useEffect(() => {
-    if (!open) return;
-    setLoading(true);
+    let cancelled = false;
     apiFetch("/profile")
-      .then((r) => r.json())
+      .then((r) => {
+        if (!r.ok) throw new Error();
+        return r.json();
+      })
       .then((data) => {
-        if (data && !data.detail) {
+        if (!cancelled && data) {
           setForm({
             name: data.name || "",
             job_title: data.job_title || "",
@@ -47,12 +51,16 @@ export default function SettingsDrawer({ open, onClose, onSaved, onLogout }: Pro
           });
         }
       })
-      .catch(() => {})
-      .finally(() => setLoading(false));
-  }, [open]);
+      // A failed load leaves an empty form; block Save so it can't blank the profile.
+      .catch(() => { if (!cancelled) setLoadFailed(true); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, []);
 
   const handleSave = async () => {
     setSaving(true);
+    setSaveError("");
+    const fallback = "Couldn't save your profile. Please retry.";
     try {
       const res = await apiFetch("/profile", {
         method: "PUT",
@@ -62,21 +70,24 @@ export default function SettingsDrawer({ open, onClose, onSaved, onLogout }: Pro
       if (res.ok) {
         onSaved(form);
         onClose();
+      } else {
+        const data = await res.json().catch(() => null);
+        setSaveError(typeof data?.detail === "string" ? data.detail : fallback);
       }
+    } catch {
+      setSaveError(fallback);
     } finally {
       setSaving(false);
     }
   };
 
-  if (!open) return null;
-
   return (
     <div className="fixed inset-0 z-50 flex justify-end">
       <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative w-full max-w-md glass rounded-l-2xl p-6 overflow-y-auto shadow-2xl border-l border-white/10 animate-in slide-in-from-right">
+      <div role="dialog" aria-modal="true" aria-label="Profile settings" className="relative w-full max-w-md glass rounded-l-2xl p-6 overflow-y-auto shadow-2xl border-l border-white/10 animate-in slide-in-from-right">
         <div className="flex items-center justify-between mb-6">
           <h2 className="text-base font-semibold text-white tracking-[-0.02em]">Your Profile</h2>
-          <button onClick={onClose} className="text-white/40 hover:text-white/80 transition-colors">
+          <button onClick={onClose} aria-label="Close" className="text-white/40 hover:text-white/80 transition-colors">
             <X className="w-4 h-4" />
           </button>
         </div>
@@ -85,6 +96,11 @@ export default function SettingsDrawer({ open, onClose, onSaved, onLogout }: Pro
           <div className="flex justify-center py-12"><Loader2 className="w-5 h-5 animate-spin text-white/40" /></div>
         ) : (
           <div className="flex flex-col gap-3">
+            {loadFailed && (
+              <p role="alert" className="text-[12px] text-red-400">
+                Couldn&apos;t load your profile. Close and reopen to retry; saving is disabled.
+              </p>
+            )}
             {(["name", "job_title", "niche", "tone", "linkedin_headline", "bio", "sample_posts"] as const).map((field) => (
               <div key={field} className="flex flex-col gap-1">
                 <label className="text-[10px] uppercase tracking-[0.12em] font-semibold text-white/40">
@@ -115,9 +131,11 @@ export default function SettingsDrawer({ open, onClose, onSaved, onLogout }: Pro
               </div>
             ))}
 
+            {saveError && <p role="alert" className="text-[12px] text-red-400">{saveError}</p>}
+
             <button
               onClick={handleSave}
-              disabled={saving || !form.name.trim()}
+              disabled={saving || loadFailed || !form.name.trim()}
               className="mt-3 w-full h-9 rounded-xl flex items-center justify-center gap-2 text-[13px] font-semibold bg-white text-[oklch(0.10_0.008_248)] hover:bg-white/92 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed transition-all"
             >
               {saving ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Saving...</>

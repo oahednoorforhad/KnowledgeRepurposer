@@ -13,16 +13,15 @@ interface Generation {
   created_at: string;
 }
 
+// Mounted only while open, so each open starts fresh in the loading state.
 interface Props {
-  open: boolean;
   onClose: () => void;
   onSelect: (gen: Generation) => void;
-  refreshKey: number;
 }
 
-export default function HistorySidebar({ open, onClose, onSelect, refreshKey }: Props) {
+export default function HistorySidebar({ onClose, onSelect }: Props) {
   const [generations, setGenerations] = useState<Generation[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [busyIds, setBusyIds] = useState<Set<string>>(new Set());
 
   // One status/delete request per item at a time.
@@ -35,33 +34,43 @@ export default function HistorySidebar({ open, onClose, onSelect, refreshKey }: 
       setBusyIds((prev) => { const next = new Set(prev); next.delete(id); return next; });
     }
   };
-
-  const load = async () => {
-    setLoading(true);
-    try {
-      const res = await apiFetch("/generations");
-      if (res.ok) setGenerations(await res.json());
-    } catch {} finally {
-      setLoading(false);
-    }
-  };
+  const [actionError, setActionError] = useState("");
 
   useEffect(() => {
-    if (open) load();
-  }, [open, refreshKey]);
+    let cancelled = false;
+    apiFetch("/generations")
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => { if (!cancelled && data) setGenerations(data); })
+      .catch(() => {})
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, []);
 
   const handleDelete = (id: string) => withBusy(id, async () => {
-    const res = await apiFetch(`/generations/${id}`, { method: "DELETE" });
-    if (res.ok) setGenerations((prev) => prev.filter((g) => g.id !== id));
+    setActionError("");
+    try {
+      const res = await apiFetch(`/generations/${id}`, { method: "DELETE" });
+      if (!res.ok) throw new Error();
+      setGenerations((prev) => prev.filter((g) => g.id !== id));
+    } catch {
+      setActionError("Couldn't delete that post. Please retry.");
+    }
   });
 
   const handleStatus = (id: string, status: "published" | "archived") => withBusy(id, async () => {
-    const res = await apiFetch(`/generations/${id}/status`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ status }),
-    });
-    if (res.ok) await load();
+    setActionError("");
+    try {
+      const res = await apiFetch(`/generations/${id}/status`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status }),
+      });
+      if (!res.ok) throw new Error();
+      const updated: Generation = await res.json();
+      setGenerations((prev) => prev.map((g) => (g.id === id ? updated : g)));
+    } catch {
+      setActionError("Couldn't update that post. Please retry.");
+    }
   });
 
   const formatDate = (iso: string) => {
@@ -74,21 +83,21 @@ export default function HistorySidebar({ open, onClose, onSelect, refreshKey }: 
     return line.length > 80 ? line.slice(0, 80) + "..." : line;
   };
 
-  if (!open) return null;
-
   return (
     <div className="fixed inset-0 z-50 flex justify-start">
       <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative w-full max-w-sm glass rounded-r-2xl p-5 overflow-y-auto shadow-2xl border-r border-white/10 animate-in slide-in-from-left">
+      <div role="dialog" aria-modal="true" aria-label="History" className="relative w-full max-w-sm glass rounded-r-2xl p-5 overflow-y-auto shadow-2xl border-r border-white/10 animate-in slide-in-from-left">
         <div className="flex items-center justify-between mb-5">
           <div className="flex items-center gap-2">
             <Clock className="w-4 h-4 text-white/50" />
             <h2 className="text-sm font-semibold text-white tracking-[-0.02em]">History</h2>
           </div>
-          <button onClick={onClose} className="text-white/40 hover:text-white/80 transition-colors">
+          <button onClick={onClose} aria-label="Close" className="text-white/40 hover:text-white/80 transition-colors">
             <X className="w-4 h-4" />
           </button>
         </div>
+
+        {actionError && <p role="alert" className="text-[12px] text-red-400 mb-3">{actionError}</p>}
 
         {loading ? (
           <div className="flex justify-center py-12"><Loader2 className="w-5 h-5 animate-spin text-white/40" /></div>
