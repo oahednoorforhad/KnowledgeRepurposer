@@ -109,6 +109,12 @@ def determine_source_type(source: str) -> str:
 
 @app.post("/api/scrape", response_model=ScrapeResponse)
 async def scrape_source(request: ScrapeRequest, user: dict = Depends(require_current_user)):
+    cached = await get_cached_source(user["id"], request.url)
+    if cached:
+        return ScrapeResponse(
+            content=cached["raw_content"], source_type=cached["source_type"], metadata={"cached": True}
+        )
+
     source_type = determine_source_type(request.url)
 
     if source_type == "youtube":
