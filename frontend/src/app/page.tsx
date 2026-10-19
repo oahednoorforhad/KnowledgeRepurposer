@@ -130,13 +130,17 @@ export default function Home() {
       }
       let text = "";
       let streamError = "";
+      let done = false;
       await readNdjson<GenerateEvent>(res, (event) => {
         if (event.delta) {
           text += event.delta;
-          replaceVersion(index, text);
+          // A whitespace-only version would be filtered out and shift the indices.
+          if (text.trim()) replaceVersion(index, text);
         } else if (event.error) streamError = event.error;
+        else if (event.done) done = true;
       });
       if (streamError) throw new Error(streamError);
+      if (!done) throw new Error("Refine was interrupted. Please retry.");
       setRefineText("");
       setRefreshHistory((n) => n + 1);
     } catch (err: unknown) {
