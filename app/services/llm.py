@@ -34,10 +34,19 @@ def count_tokens(messages: list[dict], model: str = "gpt-4o") -> int:
     return total
 
 
+VARIANT_SEPARATOR = "---VARIANT---"
+HOOK_STYLES = ("a short personal story", "a contrarian take", "a numbered list of insights")
+
+
+def split_variants(text: str) -> list[str]:
+    return [part.strip() for part in text.split(VARIANT_SEPARATOR) if part.strip()]
+
+
 def build_messages(
     transcript: str,
     creative_direction: str | None = None,
     profile: dict | None = None,
+    variants: int = 1,
 ) -> list[dict]:
     # Optional creative_direction is APPENDED as additive guidance —
     # it can add constraints (e.g. "keep under 8 lines") but cannot
@@ -52,6 +61,14 @@ def build_messages(
             f"\n\n---\n"
             f"Additional creative direction (apply ON TOP of all system rules, do not relax them):\n"
             f"{creative_direction.strip()}"
+        )
+    if variants > 1:
+        styles = "; ".join(f"{i}) {s}" for i, s in enumerate(HOOK_STYLES[:variants], 1))
+        user_content += (
+            f"\n\n---\n"
+            f"Write {variants} distinct versions of the post. Each must follow ALL system rules, "
+            f"but open with a different hook style: {styles}. "
+            f"Output only the posts, separated by a line containing exactly {VARIANT_SEPARATOR}"
         )
     return [
         {"role": "system", "content": build_prompt(profile)},
