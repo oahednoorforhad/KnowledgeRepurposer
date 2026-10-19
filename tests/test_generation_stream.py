@@ -90,3 +90,63 @@ async def test_generate_endpoint_reports_llm_error_in_stream(client, auth_header
     assert [json.loads(line) for line in resp.text.splitlines()] == [
         {"error": "All models are currently unavailable"}
     ]
+
+
+async def _failing_aiter(items, exc):
+    for item in items:
+        yield item
+    raise exc
+
+
+def _status_error(cls, code):
+    return cls("err", response=httpx.Response(code, request=httpx.Request("POST", "http://x")), body=None)
+
+
+async def test_stream_post_falls_back_when_stream_fails_before_text():
+    async def fake_open(client, model, messages, temperature):
+        if model == llm.PRIMARY_MODEL:
+            return _failing_aiter([_chunk("")], _status_error(openai.InternalServerError, 500))
+        return _aiter([_chunk("ok")])
+
+    with mock.patch.object(llm, "_open_stream_with_retry", fake_open):
+        events = [e async for e in llm.LLMService("k").stream_post([])]
+
+    assert events[0] == {"delta": "ok"}
+    assert events[-1]["model_used"] == llm.FALLBACK_MODEL
+
+
+async def test_stream_post_propagates_error_after_text():
+    boom = _status_error(openai.InternalServerError, 500)
+
+    async def fake_open(client, model, messages, temperature):
+        return _failing_aiter([_chunk("partial")], boom)
+
+    events = []
+    with mock.patch.object(llm, "_open_stream_with_retry", fake_open):
+        try:
+            async for e in llm.LLMService("k").stream_post([]):
+                events.append(e)
+        except openai.InternalServerError as e:
+            assert e is boom
+        else:
+            raise AssertionError("expected the mid-stream error to propagate")
+
+    assert events == [{"delta": "partial"}]
+
+
+async def test_stream_post_invalid_key_raises_without_fallback():
+    calls = []
+
+    async def fake_open(client, model, messages, temperature):
+        calls.append(model)
+        raise _status_error(openai.AuthenticationError, 401)
+
+    with mock.patch.object(llm, "_open_stream_with_retry", fake_open):
+        try:
+            [e async for e in llm.LLMService("bad").stream_post([])]
+        except ValueError as e:
+            assert str(e) == "Invalid API key."
+        else:
+            raise AssertionError("expected ValueError")
+
+    assert calls == [llm.PRIMARY_MODEL]
