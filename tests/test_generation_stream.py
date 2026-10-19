@@ -95,6 +95,29 @@ async def test_generate_endpoint_saves_each_variant(client, auth_headers):
     assert [g["input_tokens"] for g in gens] == [5, None]
 
 
+async def test_generate_endpoint_single_variant_ignores_separator(client, auth_headers):
+    text = f"One\n{VARIANT_SEPARATOR}\nTwo"
+
+    async def fake_stream(messages, api_key=None):
+        yield {"delta": text}
+        yield {"model_used": "m", "usage": {}}
+
+    with (
+        mock.patch("main.get_profile", return_value={"name": "Tester"}),
+        mock.patch("main.llm_service.stream_post", fake_stream),
+    ):
+        resp = await client.post(
+            "/api/generate/linkedin-post",
+            json={"transcript": "src"},
+            headers=auth_headers,
+        )
+
+    ids = json.loads(resp.text.splitlines()[-1])["generation_ids"]
+    assert len(ids) == 1
+    gen = await client.get(f"/generations/{ids[0]}", headers=auth_headers)
+    assert gen.json()["generated_post"] == text
+
+
 async def test_generate_endpoint_rejects_too_many_variants(client, auth_headers):
     resp = await client.post(
         "/api/generate/linkedin-post",

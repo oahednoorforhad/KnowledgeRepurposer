@@ -297,9 +297,13 @@ async def generate_linkedin_post(request: GeneratePostRequest, user: dict = Depe
 
         usage = final.get("usage", {})
         generation_ids = []
+        if request.variants > 1:
+            posts = split_variants(post)
+        else:
+            posts = [post.strip()] if post.strip() else []
         try:
             # One history row per version; the call's token usage is recorded on the first.
-            for i, variant in enumerate(split_variants(post)):
+            for i, variant in enumerate(posts):
                 gen = await create_generation(
                     user_id=user["id"],
                     source_url=request.source_url,
