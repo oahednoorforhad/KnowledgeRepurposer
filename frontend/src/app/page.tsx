@@ -90,6 +90,7 @@ export default function Home() {
   const [refreshHistory, setRefreshHistory] = useState(0);
   const [profileComplete, setProfileComplete] = useState(false);
   const [activeVersion, setActiveVersion] = useState(0);
+  const [generationIds, setGenerationIds] = useState<string[]>([]);
 
   // While streaming, versions appear one by one as the separator arrives.
   const versions = splitVersions(post);
@@ -136,6 +137,7 @@ export default function Home() {
     setLoading(true);
     setPost("");
     setActiveVersion(0);
+    setGenerationIds([]);
 
     try {
       let content: string;
@@ -199,6 +201,7 @@ export default function Home() {
         } else if (event.error) streamError = event.error;
         else if (event.done) {
           saved = event.generation_ids?.length ?? 0;
+          setGenerationIds(event.generation_ids ?? []);
           if (saved) setRefreshHistory((n) => n + 1);
         }
       });
@@ -513,6 +516,8 @@ export default function Home() {
         onClose={() => setHistoryOpen(false)}
         onSelect={(gen) => {
           setPost(gen.generated_post);
+          setActiveVersion(0);
+          setGenerationIds([gen.id]);
           if (gen.source_url) setUrl(gen.source_url);
         }}
         refreshKey={refreshHistory}
