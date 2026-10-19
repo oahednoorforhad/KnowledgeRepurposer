@@ -198,13 +198,29 @@ class TestInputValidation:
         )
         assert resp.status_code == 422
 
-    @pytest.mark.parametrize("endpoint", ["/auth/register", "/auth/login"])
-    async def test_short_password_returns_422(self, client, endpoint):
+    async def test_register_short_password_returns_422(self, client):
         resp = await client.post(
-            endpoint,
+            "/auth/register",
             json={"email": "valid@test.com", "password": "short"},
         )
         assert resp.status_code == 422
+
+    async def test_login_short_password_reaches_verification(self, client, db_pool):
+        """Accounts created before the 10-char minimum must still be able to log in."""
+        from app.auth import hash_password
+        from app.repositories.user_repo import create_user
+
+        _requests.clear()
+        email = f"legacy-{uuid.uuid4().hex[:8]}@example.com"
+        user = await create_user(email, hash_password("short1"))
+        try:
+            ok = await client.post("/auth/login", json={"email": email, "password": "short1"})
+            bad = await client.post("/auth/login", json={"email": email, "password": "wrong"})
+            assert ok.status_code == 200
+            assert bad.status_code == 401
+        finally:
+            async with db_pool.acquire() as conn:
+                await conn.execute("DELETE FROM users WHERE id = $1::uuid", user["id"])
 
 
 # ===================================================================

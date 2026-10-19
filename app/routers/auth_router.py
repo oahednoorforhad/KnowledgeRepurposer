@@ -27,14 +27,19 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 
 
 class AuthRequest(BaseModel):
+    # No length minimum here: accounts created before it existed must still log in.
     email: EmailStr
-    password: str = Field(min_length=10)
+    password: str
 
     @field_validator("email", mode="before")
     @classmethod
     def normalize_email(cls, v):
         # Non-strings fall through to EmailStr validation (422) instead of a 500.
         return v.strip().lower() if isinstance(v, str) else v
+
+
+class RegisterRequest(AuthRequest):
+    password: str = Field(min_length=10)
 
 
 class ChangePasswordRequest(BaseModel):
@@ -77,7 +82,7 @@ async def _start_session(response: Response, user_id: str) -> dict:
 
 
 @router.post("/register", status_code=status.HTTP_201_CREATED)
-async def register(body: AuthRequest, request: Request, response: Response):
+async def register(body: RegisterRequest, request: Request, response: Response):
     _enforce_auth_rate_limit(request, "register")
     existing = await get_user_by_email(body.email)
     if existing:
