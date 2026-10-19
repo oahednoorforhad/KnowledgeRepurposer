@@ -97,7 +97,8 @@ export default function Home() {
   const versions = splitVersions(post);
   const activeIndex = Math.min(activeVersion, Math.max(versions.length - 1, 0));
   const shown = versions[activeIndex] ?? "";
-  const activeId = generationIds[activeIndex];
+  // Legacy history rows hold several versions joined into one row; only edit when ids map 1:1.
+  const activeId = versions.length === generationIds.length ? generationIds[activeIndex] : undefined;
 
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState("");
