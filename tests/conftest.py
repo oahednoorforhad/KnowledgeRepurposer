@@ -32,12 +32,12 @@ async def db_pool():
 
     The pool is created once and shared by all tests.  When the session
     ends it deletes users that register tests create directly via the API
-    (all use @test.com emails) and closes the pool.
+    (all emails start with ``pytest-``) and closes the pool.
     """
     pool = await get_pool()
     yield pool
     async with pool.acquire() as conn:
-        await conn.execute("DELETE FROM users WHERE email LIKE '%@test.com'")
+        await conn.execute("DELETE FROM users WHERE email LIKE 'pytest-%'")
     await close_pool()
 
 
@@ -72,7 +72,7 @@ async def test_user(db_pool):
     """
     from app.repositories.user_repo import create_user
 
-    email = f"test-{uuid.uuid4().hex[:8]}@example.com"
+    email = f"pytest-test-{uuid.uuid4().hex[:8]}@example.com"
     password = "test-password-123"
     hashed = hash_password(password)
 
