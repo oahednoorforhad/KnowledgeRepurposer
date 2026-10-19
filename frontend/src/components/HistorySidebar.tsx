@@ -34,6 +34,7 @@ export default function HistorySidebar({ onClose, onSelect }: Props) {
       setBusyIds((prev) => { const next = new Set(prev); next.delete(id); return next; });
     }
   };
+  const [actionError, setActionError] = useState("");
 
   useEffect(() => {
     let cancelled = false;
@@ -46,19 +47,30 @@ export default function HistorySidebar({ onClose, onSelect }: Props) {
   }, []);
 
   const handleDelete = (id: string) => withBusy(id, async () => {
-    const res = await apiFetch(`/generations/${id}`, { method: "DELETE" });
-    if (res.ok) setGenerations((prev) => prev.filter((g) => g.id !== id));
+    setActionError("");
+    try {
+      const res = await apiFetch(`/generations/${id}`, { method: "DELETE" });
+      if (!res.ok) throw new Error();
+      setGenerations((prev) => prev.filter((g) => g.id !== id));
+    } catch {
+      setActionError("Couldn't delete that post. Please retry.");
+    }
   });
 
   const handleStatus = (id: string, status: "published" | "archived") => withBusy(id, async () => {
-    const res = await apiFetch(`/generations/${id}/status`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ status }),
-    });
-    if (!res.ok) return;
-    const updated: Generation = await res.json();
-    setGenerations((prev) => prev.map((g) => (g.id === id ? updated : g)));
+    setActionError("");
+    try {
+      const res = await apiFetch(`/generations/${id}/status`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status }),
+      });
+      if (!res.ok) throw new Error();
+      const updated: Generation = await res.json();
+      setGenerations((prev) => prev.map((g) => (g.id === id ? updated : g)));
+    } catch {
+      setActionError("Couldn't update that post. Please retry.");
+    }
   });
 
   const formatDate = (iso: string) => {
@@ -84,6 +96,8 @@ export default function HistorySidebar({ onClose, onSelect }: Props) {
             <X className="w-4 h-4" />
           </button>
         </div>
+
+        {actionError && <p role="alert" className="text-[12px] text-red-400 mb-3">{actionError}</p>}
 
         {loading ? (
           <div className="flex justify-center py-12"><Loader2 className="w-5 h-5 animate-spin text-white/40" /></div>
