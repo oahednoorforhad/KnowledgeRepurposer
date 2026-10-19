@@ -1,8 +1,15 @@
+import os
 import re
 from dataclasses import dataclass
 from urllib.parse import urlparse, parse_qs
 
-from youtube_transcript_api import YouTubeTranscriptApi
+from youtube_transcript_api import RequestBlocked, YouTubeTranscriptApi
+from youtube_transcript_api.proxies import GenericProxyConfig
+
+BLOCKED_MESSAGE = (
+    "YouTube is blocking transcript requests from this server. "
+    "Paste the transcript as text instead."
+)
 
 
 @dataclass
@@ -16,7 +23,11 @@ class YouTubeTranscriptResult:
 
 class YouTubeScraper:
     def __init__(self) -> None:
-        self._api = YouTubeTranscriptApi()
+        # YouTube blocks most cloud-provider IPs (Vercel included); a residential proxy avoids that.
+        proxy = os.getenv("YOUTUBE_PROXY_URL")
+        self._api = YouTubeTranscriptApi(
+            proxy_config=GenericProxyConfig(http_url=proxy, https_url=proxy) if proxy else None
+        )
 
     @staticmethod
     def extract_video_id(url: str) -> str:
@@ -60,9 +71,12 @@ class YouTubeScraper:
     ) -> YouTubeTranscriptResult:
         lang_codes = languages or ["en"]
 
-        transcript_list = self._api.list(video_id)
-        transcript = transcript_list.find_transcript(lang_codes)
-        entries = transcript.fetch()
+        try:
+            transcript_list = self._api.list(video_id)
+            transcript = transcript_list.find_transcript(lang_codes)
+            entries = transcript.fetch()
+        except RequestBlocked as e:  # IpBlocked is a subclass
+            raise RuntimeError(BLOCKED_MESSAGE) from e
 
         transcript_text = " ".join(entry.text for entry in entries)
 
