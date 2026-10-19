@@ -76,6 +76,8 @@ cp .env.example .env
 # DATABASE_URL: Supabase dashboard -> Connect -> Transaction pooler (port 6543)
 ```
 
+Tests write to the database: set `TEST_DATABASE_URL` to a separate Supabase project so `pytest` never touches real data.
+
 ### 2. Backend
 
 ```bash

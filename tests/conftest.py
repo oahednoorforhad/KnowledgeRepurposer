@@ -8,6 +8,15 @@ Provides:
 """
 
 import os
+
+from dotenv import load_dotenv
+
+# Point the suite at a separate database when TEST_DATABASE_URL is set (env or
+# .env). Must run before app imports; main.py's load_dotenv() won't override it.
+load_dotenv()
+if os.getenv("TEST_DATABASE_URL"):
+    os.environ["DATABASE_URL"] = os.environ["TEST_DATABASE_URL"]
+
 os.environ.setdefault(
     "JWT_SECRET",
     "test-secret-key-that-is-at-least-32-characters-long",
