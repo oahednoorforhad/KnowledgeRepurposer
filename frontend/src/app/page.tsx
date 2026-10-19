@@ -13,6 +13,17 @@ import HistorySidebar from "@/components/HistorySidebar";
 
 const VARIANT_SEPARATOR = "---VARIANT---"; // must match app/services/llm.py
 
+function splitVersions(text: string) {
+  // Drop a separator that is still arriving mid-stream (e.g. "---VAR") so it never renders.
+  for (let n = VARIANT_SEPARATOR.length - 1; n >= 3; n--) {
+    if (text.endsWith(VARIANT_SEPARATOR.slice(0, n))) {
+      text = text.slice(0, -n);
+      break;
+    }
+  }
+  return text.split(VARIANT_SEPARATOR).map((v) => v.trim()).filter(Boolean);
+}
+
 type GenerateEvent ={ delta?: string; done?: boolean; generation_ids?: string[]; error?: string };
 
 function cn(...classes: (string | undefined | false)[]) {
@@ -81,7 +92,7 @@ export default function Home() {
   const [activeVersion, setActiveVersion] = useState(0);
 
   // While streaming, versions appear one by one as the separator arrives.
-  const versions = post.split(VARIANT_SEPARATOR).map((v) => v.trim()).filter(Boolean);
+  const versions = splitVersions(post);
   const activeIndex = Math.min(activeVersion, Math.max(versions.length - 1, 0));
   const shown = versions[activeIndex] ?? "";
 
