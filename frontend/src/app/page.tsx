@@ -11,7 +11,9 @@ import { readNdjson } from "@/lib/ndjson";
 import SettingsDrawer from "@/components/SettingsDrawer";
 import HistorySidebar from "@/components/HistorySidebar";
 
-type GenerateEvent = { delta?: string; done?: boolean; generation_ids?: string[]; error?: string };
+const VARIANT_SEPARATOR = "---VARIANT---"; // must match app/services/llm.py
+
+type GenerateEvent ={ delta?: string; done?: boolean; generation_ids?: string[]; error?: string };
 
 function cn(...classes: (string | undefined | false)[]) {
   return classes.filter(Boolean).join(" ");
@@ -76,6 +78,12 @@ export default function Home() {
   const [historyOpen, setHistoryOpen] = useState(false);
   const [refreshHistory, setRefreshHistory] = useState(0);
   const [profileComplete, setProfileComplete] = useState(false);
+  const [activeVersion, setActiveVersion] = useState(0);
+
+  // While streaming, versions appear one by one as the separator arrives.
+  const versions = post.split(VARIANT_SEPARATOR).map((v) => v.trim()).filter(Boolean);
+  const activeIndex = Math.min(activeVersion, Math.max(versions.length - 1, 0));
+  const shown = versions[activeIndex] ?? "";
 
   useEffect(() => {
     apiFetch("/profile")
@@ -116,6 +124,7 @@ export default function Home() {
     setError("");
     setLoading(true);
     setPost("");
+    setActiveVersion(0);
 
     try {
       let content: string;
@@ -412,8 +421,27 @@ export default function Home() {
               <Sparkles className="w-3.5 h-3.5 text-[oklch(0.72_0.18_255)]" />
               <Label className="!text-white/35">Generated Post</Label>
             </div>
-            {post && !loading && <CopyButton text={post} />}
+            {shown && !loading && <CopyButton text={shown} />}
           </div>
+
+          {versions.length > 1 && (
+            <div role="tablist" className="flex gap-1.5 px-6 pt-4">
+              {versions.map((_, i) => (
+                <button
+                  key={i}
+                  role="tab"
+                  aria-selected={i === activeIndex}
+                  onClick={() => setActiveVersion(i)}
+                  className={cn(
+                    "h-7 px-3 rounded-lg text-[12px] font-medium transition-all duration-200",
+                    i === activeIndex ? "bg-white/10 text-white" : "text-white/35 hover:text-white/60"
+                  )}
+                >
+                  Version {i + 1}
+                </button>
+              ))}
+            </div>
+          )}
 
           <div className="flex-1 px-6 py-5 overflow-y-auto">
             {loading && !post ? (
@@ -433,9 +461,9 @@ export default function Home() {
                 <SkeletonBlock className="h-3 w-4/5" />
                 <SkeletonBlock className="h-3 w-2/3" />
               </div>
-            ) : post ? (
+            ) : shown ? (
               <div className="md-output">
-                <ReactMarkdown>{post}</ReactMarkdown>
+                <ReactMarkdown>{shown}</ReactMarkdown>
               </div>
             ) : (
               <div className="flex flex-col items-center justify-center h-full min-h-[300px] gap-4 select-none">
