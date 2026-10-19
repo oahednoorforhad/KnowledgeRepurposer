@@ -106,6 +106,9 @@ class LLMService:
             for model in (PRIMARY_MODEL, FALLBACK_MODEL):
                 try:
                     stream = await _open_stream_with_retry(client, model, messages, temperature=0.7)
+                except openai.AuthenticationError as e:
+                    # A bad key fails for every model, so don't fall back; ValueError reaches the user as-is.
+                    raise ValueError("Invalid API key.") from e
                 except (
                     openai.NotFoundError,
                     openai.RateLimitError,
