@@ -246,17 +246,17 @@ async def scrape_pdf_upload(file: UploadFile = File(...), user: dict = Depends(r
         raise HTTPException(status_code=500, detail=f"PDF upload error: {e}")
 
 
-@app.post("/api/generate/linkedin-post")
-async def generate_linkedin_post(request: GeneratePostRequest, user: dict = Depends(require_current_user)):
+async def _require_profile(user: dict) -> dict:
     profile = await get_profile(user["id"])
     if not profile or not profile.get("name"):
         raise HTTPException(
             status_code=400,
             detail="Please complete your profile (name is required) before generating posts."
         )
+    return profile
 
-    messages = build_messages(request.transcript, request.creative_direction, profile, request.variants)
 
+def _check_generation_limits(user: dict, messages: list[dict]) -> None:
     # Pre-LLM token check — guards against unbounded context consumption
     _token_count = count_tokens(messages)
     if _token_count > 1000000:
@@ -276,12 +276,14 @@ async def generate_linkedin_post(request: GeneratePostRequest, user: dict = Depe
             headers={"Retry-After": str(_retry_after)},
         )
 
-    # Streams NDJSON: {"delta": text}* then {"done": true, "generation_ids", "model_used"}
-    # or {"error": message}. Errors after streaming starts can't change the HTTP status.
+
+def _stream_llm(messages: list[dict], api_key: str | None, save) -> StreamingResponse:
+    """Stream NDJSON: {"delta": text}* then {"done": true, "model_used", **await save(post, final)}
+    or {"error": message}. Errors after streaming starts can't change the HTTP status."""
     async def events():
         post, final = "", {}
         try:
-            async for event in llm_service.stream_post(messages, api_key=request.api_key):
+            async for event in llm_service.stream_post(messages, api_key=api_key):
                 if "delta" in event:
                     post += event["delta"]
                     yield _ndjson(event)
@@ -295,6 +297,27 @@ async def generate_linkedin_post(request: GeneratePostRequest, user: dict = Depe
             yield _ndjson({"error": "Generation failed. Please retry."})
             return
 
+        try:
+            saved = await save(post, final)
+        except Exception as e:
+            logger.warning(f"Failed to save generation to DB: {e}")
+            saved = {}
+        yield _ndjson({"done": True, "model_used": final.get("model_used"), **saved})
+
+    return StreamingResponse(events(), media_type="application/x-ndjson")
+
+
+def _ndjson(obj: dict) -> str:
+    return json.dumps(obj) + "\n"
+
+
+@app.post("/api/generate/linkedin-post")
+async def generate_linkedin_post(request: GeneratePostRequest, user: dict = Depends(require_current_user)):
+    profile = await _require_profile(user)
+    messages = build_messages(request.transcript, request.creative_direction, profile, request.variants)
+    _check_generation_limits(user, messages)
+
+    async def save(post: str, final: dict) -> dict:
         usage = final.get("usage", {})
         generation_ids = []
         if request.variants > 1:
@@ -303,28 +326,20 @@ async def generate_linkedin_post(request: GeneratePostRequest, user: dict = Depe
                 logger.warning(f"Requested {request.variants} versions, model returned {len(posts)}")
         else:
             posts = [post.strip()] if post.strip() else []
-        try:
-            # One history row per version; the call's token usage is recorded on the first.
-            for i, variant in enumerate(posts):
-                gen = await create_generation(
-                    user_id=user["id"],
-                    source_url=request.source_url,
-                    source_type=request.source_type or "youtube",
-                    raw_content=request.transcript[:50000],
-                    creative_direction=request.creative_direction,
-                    generated_post=variant,
-                    model_used=final.get("model_used"),
-                    input_tokens=usage.get("input_tokens") if i == 0 else None,
-                    output_tokens=usage.get("output_tokens") if i == 0 else None,
-                )
-                generation_ids.append(str(gen["id"]))
-        except Exception as e:
-            logger.warning(f"Failed to save generation to DB: {e}")
+        # One history row per version; the call's token usage is recorded on the first.
+        for i, variant in enumerate(posts):
+            gen = await create_generation(
+                user_id=user["id"],
+                source_url=request.source_url,
+                source_type=request.source_type or "youtube",
+                raw_content=request.transcript[:50000],
+                creative_direction=request.creative_direction,
+                generated_post=variant,
+                model_used=final.get("model_used"),
+                input_tokens=usage.get("input_tokens") if i == 0 else None,
+                output_tokens=usage.get("output_tokens") if i == 0 else None,
+            )
+            generation_ids.append(str(gen["id"]))
+        return {"generation_ids": generation_ids}
 
-        yield _ndjson({"done": True, "generation_ids": generation_ids, "model_used": final.get("model_used")})
-
-    return StreamingResponse(events(), media_type="application/x-ndjson")
-
-
-def _ndjson(obj: dict) -> str:
-    return json.dumps(obj) + "\n"
+    return _stream_llm(messages, request.api_key, save)
