@@ -665,20 +665,21 @@ export default function Home() {
       </footer>
 
       <SettingsDrawer open={settingsOpen} onClose={() => setSettingsOpen(false)} onSaved={handleSettingsSaved} onLogout={handleLogout} />
-      <HistorySidebar
-        open={historyOpen}
-        onClose={() => setHistoryOpen(false)}
-        onSelect={(gen) => {
-          if (refining) return;
-          viewToken.current++;
-          setPost(gen.generated_post);
-          setActiveVersion(0);
-          setGenerationIds([gen.id]);
-          setEditing(false);
-          if (gen.source_url) setUrl(gen.source_url);
-        }}
-        refreshKey={refreshHistory}
-      />
+      {historyOpen && (
+        <HistorySidebar
+          onClose={() => setHistoryOpen(false)}
+          onSelect={(gen) => {
+            if (refining) return;
+            viewToken.current++;
+            setPost(gen.generated_post);
+            setActiveVersion(0);
+            setGenerationIds([gen.id]);
+            setEditing(false);
+            if (gen.source_url) setUrl(gen.source_url);
+          }}
+          refreshKey={refreshHistory}
+        />
+      )}
     </main>
   );
 }
