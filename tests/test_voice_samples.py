@@ -18,6 +18,11 @@ async def test_profile_rejects_oversized_sample_posts(client, auth_headers):
     assert resp.status_code == 422
 
 
+async def test_profile_rejects_non_string_field(client, auth_headers):
+    resp = await client.put("/profile", json={"name": 5}, headers=auth_headers)
+    assert resp.status_code == 422
+
+
 def test_prompt_includes_sample_posts_as_voice_guide():
     prompt = build_prompt({"name": "T", "sample_posts": "  Shipped it.\nLearned a lot.  "})
     assert "EXAMPLES OF MY PAST POSTS" in prompt
