@@ -34,6 +34,31 @@ def count_tokens(messages: list[dict], model: str = "gpt-4o") -> int:
     return total
 
 
+def build_messages(
+    transcript: str,
+    creative_direction: str | None = None,
+    profile: dict | None = None,
+) -> list[dict]:
+    # Optional creative_direction is APPENDED as additive guidance —
+    # it can add constraints (e.g. "keep under 8 lines") but cannot
+    # override or replace any rule in the system prompt.
+    user_content = (
+        "Here is the transcript to transform into a LinkedIn post "
+        "following ALL rules from your system instructions:\n\n"
+        f"{transcript}"
+    )
+    if creative_direction and creative_direction.strip():
+        user_content += (
+            f"\n\n---\n"
+            f"Additional creative direction (apply ON TOP of all system rules, do not relax them):\n"
+            f"{creative_direction.strip()}"
+        )
+    return [
+        {"role": "system", "content": build_prompt(profile)},
+        {"role": "user", "content": user_content},
+    ]
+
+
 @retry(
     stop=stop_after_attempt(3),
     wait=wait_exponential(multiplier=1, min=2, max=10),
@@ -75,29 +100,7 @@ class LLMService:
             base_url="https://openrouter.ai/api/v1"
         ))
 
-        system_content = build_prompt(profile)
-
-        # ── User message ────────────────────────────────────────────────────
-        # Contains the raw transcript the model must transform.
-        # Optional creative_direction is APPENDED as additive guidance —
-        # it can add constraints (e.g. "keep under 8 lines") but cannot
-        # override or replace any rule in the system prompt.
-        user_content = (
-            "Here is the transcript to transform into a LinkedIn post "
-            "following ALL rules from your system instructions:\n\n"
-            f"{transcript}"
-        )
-        if creative_direction and creative_direction.strip():
-            user_content += (
-                f"\n\n---\n"
-                f"Additional creative direction (apply ON TOP of all system rules, do not relax them):\n"
-                f"{creative_direction.strip()}"
-            )
-
-        messages = [
-            {"role": "system", "content": system_content},
-            {"role": "user",   "content": user_content},
-        ]
+        messages = build_messages(transcript, creative_direction, profile)
 
         usage: dict = {"input_tokens": None, "output_tokens": None}
 

@@ -21,9 +21,8 @@ from app.routers.generation_router import router as generation_router
 from db.connection import get_pool, close_pool
 from fastapi.responses import JSONResponse
 from loguru import logger
-from app.services.llm import count_tokens
+from app.services.llm import build_messages, count_tokens
 from app.services.rate_limiter import check_rate_limit
-from app.prompts import build_prompt
 from app.middleware.logging import LoggingMiddleware
 
 
@@ -261,11 +260,7 @@ async def generate_linkedin_post(request: GeneratePostRequest, user: dict = Depe
         )
 
     # Pre-LLM token check — guards against unbounded context consumption
-    _messages_preview = [
-        {"role": "system", "content": build_prompt(profile)},
-        {"role": "user", "content": request.transcript},
-    ]
-    _token_count = count_tokens(_messages_preview)
+    _token_count = count_tokens(build_messages(request.transcript, request.creative_direction, profile))
     if _token_count > 1000000:
         raise HTTPException(
             status_code=422,
