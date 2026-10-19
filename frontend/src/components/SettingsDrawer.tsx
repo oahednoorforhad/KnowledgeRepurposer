@@ -11,6 +11,7 @@ interface Profile {
   tone: string;
   linkedin_headline: string;
   bio: string;
+  sample_posts: string;
 }
 
 interface Props {
@@ -22,7 +23,7 @@ interface Props {
 
 export default function SettingsDrawer({ open, onClose, onSaved, onLogout }: Props) {
   const [form, setForm] = useState<Profile>({
-    name: "", job_title: "", niche: "", tone: "", linkedin_headline: "", bio: "",
+    name: "", job_title: "", niche: "", tone: "", linkedin_headline: "", bio: "", sample_posts: "",
   });
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -42,6 +43,7 @@ export default function SettingsDrawer({ open, onClose, onSaved, onLogout }: Pro
             tone: data.tone || "",
             linkedin_headline: data.linkedin_headline || "",
             bio: data.bio || "",
+            sample_posts: data.sample_posts || "",
           });
         }
       })
@@ -83,19 +85,22 @@ export default function SettingsDrawer({ open, onClose, onSaved, onLogout }: Pro
           <div className="flex justify-center py-12"><Loader2 className="w-5 h-5 animate-spin text-white/40" /></div>
         ) : (
           <div className="flex flex-col gap-3">
-            {(["name", "job_title", "niche", "tone", "linkedin_headline", "bio"] as const).map((field) => (
+            {(["name", "job_title", "niche", "tone", "linkedin_headline", "bio", "sample_posts"] as const).map((field) => (
               <div key={field} className="flex flex-col gap-1">
                 <label className="text-[10px] uppercase tracking-[0.12em] font-semibold text-white/40">
                   {field.replace(/_/g, " ")}
                   {field === "name" && <span className="text-red-400 ml-1">*</span>}
                 </label>
-                {field === "bio" ? (
+                {field === "bio" || field === "sample_posts" ? (
                   <textarea
                     value={form[field]}
                     onChange={(e) => setForm({ ...form, [field]: e.target.value })}
-                    rows={3}
+                    rows={field === "sample_posts" ? 8 : 3}
+                    maxLength={field === "sample_posts" ? 6000 : undefined}
                     className="w-full rounded-xl text-[13px] text-white bg-white/5 border border-white/10 p-3 outline-none focus:border-white/20 resize-none"
-                    placeholder={`Your ${field.replace(/_/g, " ")}`}
+                    placeholder={field === "sample_posts"
+                      ? "Paste 3-5 of your past LinkedIn posts. The AI copies your voice, not their content."
+                      : `Your ${field.replace(/_/g, " ")}`}
                   />
                 ) : (
                   <input
