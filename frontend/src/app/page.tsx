@@ -94,7 +94,6 @@ export default function Home() {
   const [error, setError] = useState("");
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
-  const [refreshHistory, setRefreshHistory] = useState(0);
   const [profileComplete, setProfileComplete] = useState(false);
   const [activeVersion, setActiveVersion] = useState(0);
   const [generationIds, setGenerationIds] = useState<string[]>([]);
@@ -153,7 +152,6 @@ export default function Home() {
       if (!done) throw new Error("Refine was interrupted. Please retry.");
       if (!current()) return;
       setRefineText("");
-      setRefreshHistory((n) => n + 1);
     } catch (err: unknown) {
       if (!current()) return;
       replaceVersion(index, original);
@@ -176,7 +174,6 @@ export default function Home() {
       if (viewToken.current !== token) return;
       replaceVersion(activeIndex, draft.trim());
       setEditing(false);
-      setRefreshHistory((n) => n + 1);
     } catch (err: unknown) {
       if (viewToken.current !== token) return;
       setError(err instanceof Error ? err.message : "Failed to save your edit.");
@@ -293,7 +290,6 @@ export default function Home() {
         else if (event.done) {
           saved = event.generation_ids?.length ?? 0;
           setGenerationIds(event.generation_ids ?? []);
-          if (saved) setRefreshHistory((n) => n + 1);
         }
       });
       if (streamError) throw new Error(streamError);
@@ -679,7 +675,6 @@ export default function Home() {
             setEditing(false);
             if (gen.source_url) setUrl(gen.source_url);
           }}
-          refreshKey={refreshHistory}
         />
       )}
     </main>
