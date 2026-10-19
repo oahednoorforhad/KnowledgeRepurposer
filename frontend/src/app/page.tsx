@@ -27,6 +27,12 @@ function splitVersions(text: string) {
 
 type GenerateEvent ={ delta?: string; done?: boolean; generation_ids?: string[]; error?: string };
 
+// FastAPI 422s carry a list in `detail`; only show it when it is a plain message.
+async function errorDetail(res: Response, fallback: string): Promise<string> {
+  const data = await res.json().catch(() => null);
+  return typeof data?.detail === "string" ? data.detail : fallback;
+}
+
 function cn(...classes: (string | undefined | false)[]) {
   return classes.filter(Boolean).join(" ");
 }
@@ -125,10 +131,7 @@ export default function Home() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ instruction }),
       });
-      if (!res.ok) {
-        const errData = await res.json().catch(() => null);
-        throw new Error(errData?.detail || "Failed to refine post.");
-      }
+      if (!res.ok) throw new Error(await errorDetail(res, "Failed to refine post."));
       let text = "";
       let streamError = "";
       let done = false;
@@ -160,7 +163,7 @@ export default function Home() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ generated_post: draft }),
       });
-      if (!res.ok) throw new Error("Failed to save your edit.");
+      if (!res.ok) throw new Error(await errorDetail(res, "Failed to save your edit."));
       replaceVersion(activeIndex, draft.trim());
       setEditing(false);
       setRefreshHistory((n) => n + 1);
@@ -634,6 +637,7 @@ export default function Home() {
                   value={refineText}
                   onChange={(e) => setRefineText(e.target.value)}
                   disabled={refining}
+                  maxLength={1000}
                   className="w-full h-7 px-3 rounded-lg text-[12px] text-white/80 placeholder-white/20 bg-white/5 border border-white/10 outline-none focus:border-white/20 disabled:opacity-50"
                 />
               </form>
