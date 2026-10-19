@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import ReactMarkdown from "react-markdown";
 import {
-  Sparkles, ArrowRight, Loader2, PlaySquare, Copy, Check, Zap, FileUp, Link2, X, Settings, Clock, Pencil,
+  Sparkles, ArrowRight, Loader2, PlaySquare, Copy, Check, Zap, FileUp, Link2, X, Settings, Clock, Pencil, FileText,
 } from "lucide-react";
 import { apiFetch } from "@/lib/auth";
 import { readNdjson } from "@/lib/ndjson";
@@ -84,7 +84,8 @@ function SkeletonBlock({ className }: { className?: string }) {
 export default function Home() {
   const router = useRouter();
   const [ready, setReady] = useState(false);
-  const [inputMode, setInputMode] = useState<"url" | "pdf">("url");
+  const [inputMode, setInputMode] = useState<"url" | "pdf" | "text">("url");
+  const [pastedText, setPastedText] = useState("");
   const [url, setUrl] = useState("");
   const [pdfFile, setPdfFile] = useState<File | null>(null);
   const [prompt, setPrompt] = useState("");
@@ -197,7 +198,7 @@ export default function Home() {
       .finally(() => setReady(true));
   }, [router]);
 
-  const handleModeSwitch = (mode: "url" | "pdf") => {
+  const handleModeSwitch = (mode: "url" | "pdf" | "text") => {
     setInputMode(mode);
     setError("");
     setUrl("");
@@ -212,6 +213,10 @@ export default function Home() {
     }
     if (inputMode === "pdf" && !pdfFile) {
       setError("Please select a PDF file to upload.");
+      return;
+    }
+    if (inputMode === "text" && !pastedText.trim()) {
+      setError("Please paste the text or transcript to turn into a post.");
       return;
     }
     if (!profileComplete) {
@@ -232,7 +237,10 @@ export default function Home() {
       let sourceUrl: string | null = null;
       let sourceType: string | null = null;
 
-      if (inputMode === "pdf" && pdfFile) {
+      if (inputMode === "text") {
+        content = pastedText;
+        sourceType = "text";
+      } else if (inputMode === "pdf" && pdfFile) {
         const formData = new FormData();
         formData.append("file", pdfFile);
         const scrapeRes = await apiFetch("/api/scrape/pdf-upload", {
@@ -401,9 +409,38 @@ export default function Home() {
               <FileUp className="w-3.5 h-3.5" />
               Upload PDF
             </button>
+            <button
+              id="mode-text"
+              onClick={() => handleModeSwitch("text")}
+              className={cn(
+                "flex-1 flex items-center justify-center gap-1.5 h-8 rounded-lg text-[12px] font-medium transition-all duration-200",
+                inputMode === "text" ? "bg-white/10 text-white shadow-sm" : "text-white/35 hover:text-white/60"
+              )}
+            >
+              <FileText className="w-3.5 h-3.5" />
+              Paste text
+            </button>
           </div>
 
-          {inputMode === "url" ? (
+          {inputMode === "text" ? (
+            <div className="flex flex-col gap-2.5">
+              <Label>Text or transcript</Label>
+              <textarea
+                id="pasted-text"
+                aria-label="Text or transcript"
+                placeholder="Paste a transcript, article or notes. Useful when YouTube blocks transcript requests."
+                className={cn(
+                  "min-h-[130px] w-full p-3.5 rounded-xl text-[13px] font-light leading-relaxed",
+                  "text-white/80 placeholder-white/18 resize-y",
+                  "bg-white/5 border transition-all duration-200 outline-none",
+                  "border-white/8 focus:border-white/20 focus:bg-white/8",
+                  "focus:ring-2 focus:ring-[oklch(0.62_0.22_255_/_20%)]"
+                )}
+                value={pastedText}
+                onChange={(e) => setPastedText(e.target.value)}
+              />
+            </div>
+          ) : inputMode === "url" ? (
             <div className="flex flex-col gap-2.5">
               <Label>Source URL</Label>
               <div className="relative">
