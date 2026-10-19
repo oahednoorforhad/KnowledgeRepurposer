@@ -28,6 +28,7 @@ export default function SettingsDrawer({ onClose, onSaved, onLogout }: Props) {
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(true);
   const [loadFailed, setLoadFailed] = useState(false);
+  const [saveError, setSaveError] = useState("");
   const [loggingOut, setLoggingOut] = useState(false);
 
   useEffect(() => {
@@ -58,6 +59,8 @@ export default function SettingsDrawer({ onClose, onSaved, onLogout }: Props) {
 
   const handleSave = async () => {
     setSaving(true);
+    setSaveError("");
+    const fallback = "Couldn't save your profile. Please retry.";
     try {
       const res = await apiFetch("/profile", {
         method: "PUT",
@@ -67,7 +70,12 @@ export default function SettingsDrawer({ onClose, onSaved, onLogout }: Props) {
       if (res.ok) {
         onSaved(form);
         onClose();
+      } else {
+        const data = await res.json().catch(() => null);
+        setSaveError(typeof data?.detail === "string" ? data.detail : fallback);
       }
+    } catch {
+      setSaveError(fallback);
     } finally {
       setSaving(false);
     }
@@ -122,6 +130,8 @@ export default function SettingsDrawer({ onClose, onSaved, onLogout }: Props) {
                 )}
               </div>
             ))}
+
+            {saveError && <p role="alert" className="text-[12px] text-red-400">{saveError}</p>}
 
             <button
               onClick={handleSave}
