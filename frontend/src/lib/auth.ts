@@ -1,5 +1,7 @@
 // Auth lives in HttpOnly cookies set by the backend; the client never sees the tokens.
-export const API_BASE = "http://localhost:8000";
+// In production the API is served from the same origin (vercel.json routes it to the backend).
+export const API_BASE =
+  process.env.NEXT_PUBLIC_API_URL ?? (process.env.NODE_ENV === "production" ? "" : "http://localhost:8000");
 
 // One in-flight refresh shared by all callers: the backend treats a second use of the
 // same (already rotated) refresh token as reuse and revokes every session.
