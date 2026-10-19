@@ -59,7 +59,7 @@ def build_messages(
     ]
 
 
-_transient_retry = retry(
+@retry(
     stop=stop_after_attempt(3),
     wait=wait_exponential(multiplier=1, min=2, max=10),
     retry=retry_if_exception_type((
@@ -70,9 +70,6 @@ _transient_retry = retry(
     before_sleep=before_sleep_log(logging.getLogger("tenacity"), logging.WARNING),
     reraise=True,
 )
-
-
-@_transient_retry
 async def _open_stream_with_retry(client, model: str, messages: list[dict], temperature: float):
     """Open a streaming completion, retrying transient errors before any token is sent."""
     return await client.chat.completions.create(
@@ -81,16 +78,6 @@ async def _open_stream_with_retry(client, model: str, messages: list[dict], temp
         temperature=temperature,
         stream=True,
         stream_options={"include_usage": True},
-    )
-
-
-@_transient_retry
-def _call_with_retry(client, model: str, messages: list[dict], temperature: float):
-    """Call the OpenRouter API with exponential backoff retry on transient errors."""
-    return client.chat.completions.create(
-        model=model,
-        messages=messages,
-        temperature=temperature,
     )
 
 
@@ -135,52 +122,6 @@ class LLMService:
             if produced:
                 yield {"model_used": model, "usage": usage}
                 return
-
-        raise RuntimeError(
-            "All models are currently unavailable or rate-limited. "
-            "Please retry in a moment."
-        )
-
-    @traceable(name="Generate LinkedIn Post")
-    def generate_linkedin_post(
-        self,
-        transcript: str,
-        creative_direction: str | None = None,
-        api_key: str | None = None,
-        profile: dict | None = None,
-    ) -> tuple[str, str, dict]:
-        key = api_key or self.default_api_key
-        if not key:
-            raise ValueError("OpenAI API key is required")
-
-        client = wrappers.wrap_openai(openai.OpenAI(
-            api_key=key,
-            base_url="https://openrouter.ai/api/v1"
-        ))
-
-        messages = build_messages(transcript, creative_direction, profile)
-
-        usage: dict = {"input_tokens": None, "output_tokens": None}
-
-        # Try primary model, fall back gracefully on endpoint errors.
-        for model in (PRIMARY_MODEL, FALLBACK_MODEL):
-            try:
-                response = _call_with_retry(client, model, messages, temperature=0.7)
-                try:
-                    content = response.choices[0].message.content
-                except (IndexError, AttributeError, TypeError):
-                    continue
-                if not content or not content.strip():
-                    continue
-                # Capture token usage if provided by OpenRouter
-                if response.usage:
-                    usage = {
-                        "input_tokens": response.usage.prompt_tokens,
-                        "output_tokens": response.usage.completion_tokens,
-                    }
-                return content, model, usage
-            except (openai.NotFoundError, openai.RateLimitError, openai.BadRequestError):
-                continue
 
         raise RuntimeError(
             "All models are currently unavailable or rate-limited. "
