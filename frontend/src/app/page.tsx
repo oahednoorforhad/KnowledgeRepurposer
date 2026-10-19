@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import ReactMarkdown from "react-markdown";
 import {
@@ -119,14 +119,20 @@ export default function Home() {
 
   const [refining, setRefining] = useState(false);
   const [refineText, setRefineText] = useState("");
+  // Bumped when a new generation or history item replaces the view, so in-flight
+  // edit/refine requests don't write into a post they no longer belong to.
+  const viewToken = useRef(0);
 
   const handleRefine = async (instruction: string) => {
     const index = activeIndex;
     const original = shown;
+    const id = activeId;
+    const token = viewToken.current;
+    const current = () => viewToken.current === token;
     setError("");
     setRefining(true);
     try {
-      const res = await apiFetch(`/generations/${activeId}/refine`, {
+      const res = await apiFetch(`/generations/${id}/refine`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ instruction }),
@@ -139,15 +145,17 @@ export default function Home() {
         if (event.delta) {
           text += event.delta;
           // A whitespace-only version would be filtered out and shift the indices.
-          if (text.trim()) replaceVersion(index, text);
+          if (text.trim() && current()) replaceVersion(index, text);
         } else if (event.error) streamError = event.error;
         else if (event.done) done = true;
       });
       if (streamError) throw new Error(streamError);
       if (!done) throw new Error("Refine was interrupted. Please retry.");
+      if (!current()) return;
       setRefineText("");
       setRefreshHistory((n) => n + 1);
     } catch (err: unknown) {
+      if (!current()) return;
       replaceVersion(index, original);
       setError(err instanceof Error ? err.message : "Failed to refine post.");
     } finally {
@@ -156,6 +164,7 @@ export default function Home() {
   };
 
   const handleSaveEdit = async () => {
+    const token = viewToken.current;
     setSavingEdit(true);
     try {
       const res = await apiFetch(`/generations/${activeId}`, {
@@ -164,10 +173,12 @@ export default function Home() {
         body: JSON.stringify({ generated_post: draft }),
       });
       if (!res.ok) throw new Error(await errorDetail(res, "Failed to save your edit."));
+      if (viewToken.current !== token) return;
       replaceVersion(activeIndex, draft.trim());
       setEditing(false);
       setRefreshHistory((n) => n + 1);
     } catch (err: unknown) {
+      if (viewToken.current !== token) return;
       setError(err instanceof Error ? err.message : "Failed to save your edit.");
     } finally {
       setSavingEdit(false);
@@ -211,6 +222,7 @@ export default function Home() {
       return;
     }
 
+    viewToken.current++;
     setError("");
     setLoading(true);
     setPost("");
@@ -658,6 +670,7 @@ export default function Home() {
         onClose={() => setHistoryOpen(false)}
         onSelect={(gen) => {
           if (refining) return;
+          viewToken.current++;
           setPost(gen.generated_post);
           setActiveVersion(0);
           setGenerationIds([gen.id]);
