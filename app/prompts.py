@@ -488,6 +488,14 @@ def build_prompt(profile: dict | None = None) -> str:
             parts.append(f"LinkedIn Headline: {headline}.")
         if bio:
             parts.append(f"Personal Story: {bio}.")
+        samples = (profile.get("sample_posts") or "").strip()
+        if samples:
+            parts.append(
+                "\nEXAMPLES OF MY PAST POSTS\n"
+                "Match their voice, rhythm, vocabulary and formatting habits. "
+                "Never reuse their topics, claims or sentences.\n"
+                f"{samples}"
+            )
         context = "\n".join(parts)
 
     return LINKEDIN_PROMPT_TEMPLATE.format(context_about_me=context)
