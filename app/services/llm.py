@@ -106,21 +106,33 @@ class LLMService:
             for model in (PRIMARY_MODEL, FALLBACK_MODEL):
                 try:
                     stream = await _open_stream_with_retry(client, model, messages, temperature=0.7)
-                except (openai.NotFoundError, openai.RateLimitError, openai.BadRequestError):
+                except (
+                    openai.NotFoundError,
+                    openai.RateLimitError,
+                    openai.BadRequestError,
+                    openai.InternalServerError,
+                    openai.APIConnectionError,
+                ):
                     continue
 
                 usage: dict = {"input_tokens": None, "output_tokens": None}
                 produced = False
-                async for chunk in stream:
-                    if chunk.usage:
-                        usage = {
-                            "input_tokens": chunk.usage.prompt_tokens,
-                            "output_tokens": chunk.usage.completion_tokens,
-                        }
-                    text = chunk.choices[0].delta.content if chunk.choices else None
-                    if text:
-                        produced = True
-                        yield {"delta": text}
+                try:
+                    async for chunk in stream:
+                        if chunk.usage:
+                            usage = {
+                                "input_tokens": chunk.usage.prompt_tokens,
+                                "output_tokens": chunk.usage.completion_tokens,
+                            }
+                        text = chunk.choices[0].delta.content if chunk.choices else None
+                        if text:
+                            produced = True
+                            yield {"delta": text}
+                except Exception:
+                    # Mid-stream failure: safe to try the next model only if nothing was sent yet.
+                    if produced:
+                        raise
+                    continue
                 if produced:
                     yield {"model_used": model, "usage": usage}
                     return
