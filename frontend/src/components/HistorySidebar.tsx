@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Clock, Trash2, Archive, Copy, RotateCcw, X, Loader2, PlaySquare, FileText } from "lucide-react";
+import { Clock, Trash2, Archive, CheckCircle2, Copy, RotateCcw, X, Loader2, PlaySquare, FileText } from "lucide-react";
 import { apiFetch } from "@/lib/auth";
 
 interface Generation {
@@ -43,11 +43,11 @@ export default function HistorySidebar({ open, onClose, onSelect, refreshKey }: 
     if (res.ok) setGenerations((prev) => prev.filter((g) => g.id !== id));
   };
 
-  const handleArchive = async (id: string) => {
+  const handleStatus = async (id: string, status: "published" | "archived") => {
     const res = await apiFetch(`/generations/${id}/status`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ status: "archived" }),
+      body: JSON.stringify({ status }),
     });
     if (res.ok) load();
   };
@@ -124,7 +124,12 @@ export default function HistorySidebar({ open, onClose, onSelect, refreshKey }: 
                       className="p-1 rounded-md text-white/30 hover:text-white/80 hover:bg-white/10 transition-all"
                     ><Copy className="w-3 h-3" /></button>
                     <button
-                      onClick={(e) => { e.stopPropagation(); handleArchive(gen.id); }}
+                      onClick={(e) => { e.stopPropagation(); handleStatus(gen.id, "published"); }}
+                      title="Mark published"
+                      className="p-1 rounded-md text-white/30 hover:text-green-400 hover:bg-green-500/10 transition-all"
+                    ><CheckCircle2 className="w-3 h-3" /></button>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); handleStatus(gen.id, "archived"); }}
                       title="Archive"
                       className="p-1 rounded-md text-white/30 hover:text-yellow-400 hover:bg-yellow-500/10 transition-all"
                     ><Archive className="w-3 h-3" /></button>
