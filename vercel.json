@@ -1,0 +1,15 @@
+{
+  "services": {
+    "frontend": { "root": "frontend" },
+    "backend": { "root": ".", "entrypoint": "main:app" }
+  },
+  "rewrites": [
+    { "source": "/api/(.*)", "destination": { "service": "backend" } },
+    { "source": "/auth/(.*)", "destination": { "service": "backend" } },
+    { "source": "/profile", "destination": { "service": "backend" } },
+    { "source": "/generations", "destination": { "service": "backend" } },
+    { "source": "/generations/(.*)", "destination": { "service": "backend" } },
+    { "source": "/health", "destination": { "service": "backend" } },
+    { "source": "/(.*)", "destination": { "service": "frontend" } }
+  ]
+}

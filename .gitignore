@@ -15,3 +15,7 @@ knowledgePosterPRD.md
 # Local tooling / logs
 .puku/
 *.log
+
+.vercel
+.env*
+!.env.example
