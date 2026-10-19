@@ -6,7 +6,7 @@ import ReactMarkdown from "react-markdown";
 import {
   Sparkles, ArrowRight, Loader2, PlaySquare, Copy, Check, Zap, FileUp, Link2, X, Settings, Clock,
 } from "lucide-react";
-import { getToken, authHeaders, clearToken } from "@/lib/auth";
+import { apiFetch } from "@/lib/auth";
 import SettingsDrawer from "@/components/SettingsDrawer";
 import HistorySidebar from "@/components/HistorySidebar";
 
@@ -74,17 +74,17 @@ export default function Home() {
   const [profileComplete, setProfileComplete] = useState(false);
 
   useEffect(() => {
-    const token = getToken();
-    if (!token) {
-      router.replace("/login");
-      return;
-    }
-    fetch("http://127.0.0.1:8000/profile", { headers: authHeaders() })
-      .then((r) => r.json())
+    apiFetch("/profile")
+      .then((r) => {
+        if (!r.ok) throw new Error("Not authenticated");
+        return r.json();
+      })
       .then((data) => {
         if (data && data.name) setProfileComplete(true);
       })
-      .catch(() => {})
+      .catch(() => {
+        router.replace("/login");
+      })
       .finally(() => setReady(true));
   }, [router]);
 
@@ -121,8 +121,8 @@ export default function Home() {
       if (inputMode === "pdf" && pdfFile) {
         const formData = new FormData();
         formData.append("file", pdfFile);
-        const scrapeRes = await fetch("http://127.0.0.1:8000/api/scrape/pdf-upload", {
-          method: "POST", headers: authHeaders(), body: formData,
+        const scrapeRes = await apiFetch("/api/scrape/pdf-upload", {
+          method: "POST", body: formData,
         });
         if (!scrapeRes.ok) {
           const errData = await scrapeRes.json().catch(() => null);
@@ -133,9 +133,9 @@ export default function Home() {
         sourceUrl = scrapeData.metadata?.filename || null;
         sourceType = "pdf";
       } else {
-        const scrapeRes = await fetch("http://127.0.0.1:8000/api/scrape", {
+        const scrapeRes = await apiFetch("/api/scrape", {
           method: "POST",
-          headers: { "Content-Type": "application/json", ...authHeaders() },
+          headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ url }),
         });
         if (!scrapeRes.ok) {
@@ -148,9 +148,9 @@ export default function Home() {
         sourceType = scrapeData.source_type;
       }
 
-      const generateRes = await fetch("http://127.0.0.1:8000/api/generate/linkedin-post", {
+      const generateRes = await apiFetch("/api/generate/linkedin-post", {
         method: "POST",
-        headers: { "Content-Type": "application/json", ...authHeaders() },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           transcript: content,
           source_url: sourceUrl,
@@ -181,14 +181,10 @@ export default function Home() {
 
   const handleLogout = async () => {
     try {
-      await fetch("http://127.0.0.1:8000/auth/logout", {
-        method: "POST",
-        headers: authHeaders(),
-      });
+      await apiFetch("/auth/logout", { method: "POST" });
     } catch {
       // Backend failure does not block client-side logout
     } finally {
-      clearToken();
       router.replace("/login");
     }
   };

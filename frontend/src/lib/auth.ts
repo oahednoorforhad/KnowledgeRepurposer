@@ -1,20 +1,26 @@
-const TOKEN_KEY = "kp_token";
+// Auth lives in HttpOnly cookies set by the backend; the client never sees the tokens.
+export const API_BASE = "http://localhost:8000";
 
-export function getToken(): string | null {
-  if (typeof window === "undefined") return null;
-  return localStorage.getItem(TOKEN_KEY);
+// One in-flight refresh shared by all callers: the backend treats a second use of the
+// same (already rotated) refresh token as reuse and revokes every session.
+let refreshing: Promise<boolean> | null = null;
+
+function refreshSession(): Promise<boolean> {
+  refreshing ??= fetch(`${API_BASE}/auth/refresh`, { method: "POST", credentials: "include" })
+    .then((r) => r.ok)
+    .catch(() => false)
+    .finally(() => {
+      refreshing = null;
+    });
+  return refreshing;
 }
 
-export function setToken(token: string): void {
-  localStorage.setItem(TOKEN_KEY, token);
-}
+const NO_RETRY = new Set(["/auth/login", "/auth/register", "/auth/refresh"]);
 
-export function clearToken(): void {
-  localStorage.removeItem(TOKEN_KEY);
-}
-
-export function authHeaders(): Record<string, string> {
-  const token = getToken();
-  if (!token) return {};
-  return { Authorization: `Bearer ${token}` };
+// fetch against the API with cookies; on 401 refresh the access token once and retry.
+export async function apiFetch(path: string, init: RequestInit = {}): Promise<Response> {
+  const opts: RequestInit = { ...init, credentials: "include" };
+  const res = await fetch(`${API_BASE}${path}`, opts);
+  if (res.status !== 401 || NO_RETRY.has(path)) return res;
+  return (await refreshSession()) ? fetch(`${API_BASE}${path}`, opts) : res;
 }

@@ -3,6 +3,8 @@ import urllib.parse
 import re
 
 from dotenv import load_dotenv
+
+load_dotenv()  # before app imports: app.auth reads JWT_SECRET at import time
 from fastapi import FastAPI, HTTPException, UploadFile, File, Depends
 from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
@@ -10,7 +12,7 @@ from contextlib import asynccontextmanager
 
 from app.scrapers import YouTubeScraper, ArticleScraper, PdfScraper, MarkdownScraper
 from app.services.llm import LLMService
-from app.auth import get_current_user
+from app.auth import require_current_user, _validate_jwt_secret
 from app.repositories.profile_repo import get_profile
 from app.repositories.generation_repo import create_generation
 from app.routers.auth_router import router as auth_router
@@ -24,11 +26,11 @@ from app.services.rate_limiter import check_rate_limit
 from app.prompts import build_prompt
 from app.middleware.logging import LoggingMiddleware
 
-load_dotenv()
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    _validate_jwt_secret()
     await get_pool()
     yield
     await close_pool()
@@ -110,7 +112,7 @@ def determine_source_type(source: str) -> str:
 
 
 @app.post("/api/scrape", response_model=ScrapeResponse)
-async def scrape_source(request: ScrapeRequest, user: dict | None = Depends(get_current_user)):
+async def scrape_source(request: ScrapeRequest, user: dict = Depends(require_current_user)):
     source_type = determine_source_type(request.url)
 
     if source_type == "youtube":
@@ -184,7 +186,7 @@ async def scrape_source(request: ScrapeRequest, user: dict | None = Depends(get_
 
 
 @app.post("/api/scrape/youtube", response_model=YouTubeTranscriptResponse)
-async def scrape_youtube(request: YouTubeUrlRequest, user: dict | None = Depends(get_current_user)):
+async def scrape_youtube(request: YouTubeUrlRequest, user: dict = Depends(require_current_user)):
     source_type = determine_source_type(request.url)
     if source_type != "youtube":
         raise HTTPException(
@@ -225,7 +227,7 @@ async def health():
 
 
 @app.post("/api/scrape/pdf-upload", response_model=ScrapeResponse)
-async def scrape_pdf_upload(file: UploadFile = File(...), user: dict | None = Depends(get_current_user)):
+async def scrape_pdf_upload(file: UploadFile = File(...), user: dict = Depends(require_current_user)):
     if not file.filename or not file.filename.lower().endswith(".pdf"):
         raise HTTPException(status_code=400, detail="Only .pdf files are accepted.")
     _MAX_PDF_BYTES = 10 * 1024 * 1024  # 10MB
@@ -250,16 +252,13 @@ async def scrape_pdf_upload(file: UploadFile = File(...), user: dict | None = De
 
 
 @app.post("/api/generate/linkedin-post", response_model=GeneratePostResponse)
-async def generate_linkedin_post(request: GeneratePostRequest, user: dict | None = Depends(get_current_user)):
-    if user:
-        profile = await get_profile(user["id"])
-        if not profile or not profile.get("name"):
-            raise HTTPException(
-                status_code=400,
-                detail="Please complete your profile (name is required) before generating posts."
-            )
-    else:
-        profile = None
+async def generate_linkedin_post(request: GeneratePostRequest, user: dict = Depends(require_current_user)):
+    profile = await get_profile(user["id"])
+    if not profile or not profile.get("name"):
+        raise HTTPException(
+            status_code=400,
+            detail="Please complete your profile (name is required) before generating posts."
+        )
 
     # Pre-LLM token check — guards against unbounded context consumption
     _messages_preview = [
@@ -274,14 +273,13 @@ async def generate_linkedin_post(request: GeneratePostRequest, user: dict | None
         )
 
     # Per-user rate limit (in-memory, resets on restart)
-    if user:
-        _allowed, _retry_after = check_rate_limit(str(user["id"]))
-        if not _allowed:
-            raise HTTPException(
-                status_code=429,
-                detail="Rate limit exceeded. You can generate 20 posts per hour.",
-                headers={"Retry-After": str(_retry_after)},
-            )
+    _allowed, _retry_after = check_rate_limit(str(user["id"]))
+    if not _allowed:
+        raise HTTPException(
+            status_code=429,
+            detail="Rate limit exceeded. You can generate 20 posts per hour.",
+            headers={"Retry-After": str(_retry_after)},
+        )
 
     try:
         post, model_used, usage = llm_service.generate_linkedin_post(
@@ -297,22 +295,21 @@ async def generate_linkedin_post(request: GeneratePostRequest, user: dict | None
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Internal error: {e}")
 
-    generation_id = None
-    if user:
-        try:
-            gen = await create_generation(
-                user_id=user["id"],
-                source_url=request.source_url,
-                source_type=request.source_type or "youtube",
-                raw_content=request.transcript[:50000],
-                creative_direction=request.creative_direction,
-                generated_post=post,
-                model_used=model_used,
-                input_tokens=usage.get("input_tokens"),
-                output_tokens=usage.get("output_tokens"),
-            )
-            generation_id = str(gen["id"])
-        except Exception as e:
-            logger.warning(f"Failed to save generation to DB: {e}")
+    try:
+        gen = await create_generation(
+            user_id=user["id"],
+            source_url=request.source_url,
+            source_type=request.source_type or "youtube",
+            raw_content=request.transcript[:50000],
+            creative_direction=request.creative_direction,
+            generated_post=post,
+            model_used=model_used,
+            input_tokens=usage.get("input_tokens"),
+            output_tokens=usage.get("output_tokens"),
+        )
+        generation_id = str(gen["id"])
+    except Exception as e:
+        logger.warning(f"Failed to save generation to DB: {e}")
+        generation_id = None
 
     return GeneratePostResponse(post=post, generation_id=generation_id, model_used=model_used)

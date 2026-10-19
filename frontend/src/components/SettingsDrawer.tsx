@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { X, Save, Loader2, LogOut } from "lucide-react";
-import { authHeaders } from "@/lib/auth";
+import { apiFetch } from "@/lib/auth";
 
 interface Profile {
   name: string;
@@ -31,7 +31,7 @@ export default function SettingsDrawer({ open, onClose, onSaved, onLogout }: Pro
   useEffect(() => {
     if (!open) return;
     setLoading(true);
-    fetch("http://127.0.0.1:8000/profile", { headers: authHeaders() })
+    apiFetch("/profile")
       .then((r) => r.json())
       .then((data) => {
         if (data && !data.detail) {
@@ -52,9 +52,9 @@ export default function SettingsDrawer({ open, onClose, onSaved, onLogout }: Pro
   const handleSave = async () => {
     setSaving(true);
     try {
-      const res = await fetch("http://127.0.0.1:8000/profile", {
+      const res = await apiFetch("/profile", {
         method: "PUT",
-        headers: { "Content-Type": "application/json", ...authHeaders() },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(form),
       });
       if (res.ok) {

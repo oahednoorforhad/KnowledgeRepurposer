@@ -1,9 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { Zap, Loader2, ArrowRight } from "lucide-react";
-import { setToken } from "@/lib/auth";
+import { apiFetch } from "@/lib/auth";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -12,6 +12,25 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [pageReady, setPageReady] = useState(false);
+
+  useEffect(() => {
+    apiFetch("/profile")
+      .then((r) => {
+        if (r.ok) {
+          router.replace("/");
+        } else {
+          setPageReady(true);
+        }
+      })
+      .catch(() => {
+        setPageReady(true);
+      });
+  }, [router]);
+
+  if (!pageReady) {
+    return <div className="min-h-screen flex items-center justify-center"><Loader2 className="w-5 h-5 animate-spin text-white/40" /></div>;
+  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -19,14 +38,13 @@ export default function LoginPage() {
     setLoading(true);
 
     try {
-      const res = await fetch(`http://127.0.0.1:8000/auth/${mode}`, {
+      const res = await apiFetch(`/auth/${mode}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, password }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.detail || "Something went wrong");
-      setToken(data.token);
       router.push("/");
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "An error occurred");
@@ -72,11 +90,11 @@ export default function LoginPage() {
             <input
               type="password"
               required
-              minLength={6}
+              minLength={10}
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               className="w-full h-10 px-3.5 rounded-xl text-[13.5px] text-white bg-white/5 border border-white/10 outline-none focus:border-white/20 focus:bg-white/8 transition-all"
-              placeholder="At least 6 characters"
+              placeholder="At least 10 characters"
             />
           </div>
 

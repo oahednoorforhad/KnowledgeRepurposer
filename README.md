@@ -81,15 +81,9 @@ uv run uvicorn main:app --reload
 ### 3. Database (first run)
 
 ```bash
-# Apply schema to your local Postgres
+# Apply schema to your local Postgres. The file is idempotent: re-run it
+# to upgrade an existing DB (it adds refresh_tokens and new columns if missing).
 psql $DATABASE_URL -f db/schema.sql
-
-# If upgrading an existing DB, run the migration instead:
-psql $DATABASE_URL -c "
-  ALTER TABLE generations ADD COLUMN IF NOT EXISTS input_tokens INT;
-  ALTER TABLE generations ADD COLUMN IF NOT EXISTS output_tokens INT;
-  ALTER TABLE generations ADD COLUMN IF NOT EXISTS estimated_cost_usd NUMERIC(10,6);
-"
 ```
 
 ### 4. Frontend
