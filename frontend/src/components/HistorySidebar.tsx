@@ -23,6 +23,18 @@ interface Props {
 export default function HistorySidebar({ open, onClose, onSelect, refreshKey }: Props) {
   const [generations, setGenerations] = useState<Generation[]>([]);
   const [loading, setLoading] = useState(false);
+  const [busyIds, setBusyIds] = useState<Set<string>>(new Set());
+
+  // One status/delete request per item at a time.
+  const withBusy = async (id: string, action: () => Promise<void>) => {
+    if (busyIds.has(id)) return;
+    setBusyIds((prev) => new Set(prev).add(id));
+    try {
+      await action();
+    } finally {
+      setBusyIds((prev) => { const next = new Set(prev); next.delete(id); return next; });
+    }
+  };
 
   const load = async () => {
     setLoading(true);
@@ -38,19 +50,19 @@ export default function HistorySidebar({ open, onClose, onSelect, refreshKey }: 
     if (open) load();
   }, [open, refreshKey]);
 
-  const handleDelete = async (id: string) => {
+  const handleDelete = (id: string) => withBusy(id, async () => {
     const res = await apiFetch(`/generations/${id}`, { method: "DELETE" });
     if (res.ok) setGenerations((prev) => prev.filter((g) => g.id !== id));
-  };
+  });
 
-  const handleStatus = async (id: string, status: "published" | "archived") => {
+  const handleStatus = (id: string, status: "published" | "archived") => withBusy(id, async () => {
     const res = await apiFetch(`/generations/${id}/status`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ status }),
     });
-    if (res.ok) load();
-  };
+    if (res.ok) await load();
+  });
 
   const formatDate = (iso: string) => {
     const d = new Date(iso);
@@ -125,18 +137,21 @@ export default function HistorySidebar({ open, onClose, onSelect, refreshKey }: 
                     ><Copy className="w-3 h-3" /></button>
                     <button
                       onClick={(e) => { e.stopPropagation(); handleStatus(gen.id, "published"); }}
+                      disabled={busyIds.has(gen.id)}
                       title="Mark published"
-                      className="p-1 rounded-md text-white/30 hover:text-green-400 hover:bg-green-500/10 transition-all"
+                      className="p-1 rounded-md text-white/30 hover:text-green-400 hover:bg-green-500/10 disabled:opacity-40 transition-all"
                     ><CheckCircle2 className="w-3 h-3" /></button>
                     <button
                       onClick={(e) => { e.stopPropagation(); handleStatus(gen.id, "archived"); }}
+                      disabled={busyIds.has(gen.id)}
                       title="Archive"
-                      className="p-1 rounded-md text-white/30 hover:text-yellow-400 hover:bg-yellow-500/10 transition-all"
+                      className="p-1 rounded-md text-white/30 hover:text-yellow-400 hover:bg-yellow-500/10 disabled:opacity-40 transition-all"
                     ><Archive className="w-3 h-3" /></button>
                     <button
                       onClick={(e) => { e.stopPropagation(); handleDelete(gen.id); }}
+                      disabled={busyIds.has(gen.id)}
                       title="Delete"
-                      className="p-1 rounded-md text-white/30 hover:text-red-400 hover:bg-red-500/10 transition-all"
+                      className="p-1 rounded-md text-white/30 hover:text-red-400 hover:bg-red-500/10 disabled:opacity-40 transition-all"
                     ><Trash2 className="w-3 h-3" /></button>
                   </div>
                 </div>
