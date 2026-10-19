@@ -3,6 +3,8 @@ import urllib.parse
 import re
 
 from dotenv import load_dotenv
+
+load_dotenv()  # before app imports: app.auth reads JWT_SECRET at import time
 from fastapi import FastAPI, HTTPException, UploadFile, File, Depends
 from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
@@ -24,7 +26,6 @@ from app.services.rate_limiter import check_rate_limit
 from app.prompts import build_prompt
 from app.middleware.logging import LoggingMiddleware
 
-load_dotenv()
 
 
 @asynccontextmanager
