@@ -1,10 +1,10 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import ReactMarkdown from "react-markdown";
 import {
-  Sparkles, ArrowRight, Loader2, PlaySquare, Copy, Check, Zap, FileUp, Link2, X, Settings, Clock,
+  Sparkles, ArrowRight, Loader2, PlaySquare, Copy, Check, Zap, FileUp, Link2, X, Settings, Clock, Pencil,
 } from "lucide-react";
 import { apiFetch } from "@/lib/auth";
 import { readNdjson } from "@/lib/ndjson";
@@ -12,6 +12,7 @@ import SettingsDrawer from "@/components/SettingsDrawer";
 import HistorySidebar from "@/components/HistorySidebar";
 
 const VARIANT_SEPARATOR = "---VARIANT---"; // must match app/services/llm.py
+const REFINE_PRESETS = ["Shorter", "More casual", "Stronger hook"];
 
 function splitVersions(text: string) {
   // Drop a separator that is still arriving mid-stream (e.g. "---VAR") so it never renders.
@@ -25,6 +26,12 @@ function splitVersions(text: string) {
 }
 
 type GenerateEvent ={ delta?: string; done?: boolean; generation_ids?: string[]; error?: string };
+
+// FastAPI 422s carry a list in `detail`; only show it when it is a plain message.
+async function errorDetail(res: Response, fallback: string): Promise<string> {
+  const data = await res.json().catch(() => null);
+  return typeof data?.detail === "string" ? data.detail : fallback;
+}
 
 function cn(...classes: (string | undefined | false)[]) {
   return classes.filter(Boolean).join(" ");
@@ -90,11 +97,93 @@ export default function Home() {
   const [refreshHistory, setRefreshHistory] = useState(0);
   const [profileComplete, setProfileComplete] = useState(false);
   const [activeVersion, setActiveVersion] = useState(0);
+  const [generationIds, setGenerationIds] = useState<string[]>([]);
 
   // While streaming, versions appear one by one as the separator arrives.
   const versions = splitVersions(post);
   const activeIndex = Math.min(activeVersion, Math.max(versions.length - 1, 0));
   const shown = versions[activeIndex] ?? "";
+  // Legacy history rows hold several versions joined into one row; only edit when ids map 1:1.
+  const activeId = versions.length === generationIds.length ? generationIds[activeIndex] : undefined;
+
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState("");
+  const [savingEdit, setSavingEdit] = useState(false);
+
+  const replaceVersion = (index: number, text: string) =>
+    setPost((prev) => {
+      const parts = prev.split(VARIANT_SEPARATOR).map((v) => v.trim()).filter(Boolean);
+      parts[index] = text;
+      return parts.join(`\n${VARIANT_SEPARATOR}\n`);
+    });
+
+  const [refining, setRefining] = useState(false);
+  const [refineText, setRefineText] = useState("");
+  // Bumped when a new generation or history item replaces the view, so in-flight
+  // edit/refine requests don't write into a post they no longer belong to.
+  const viewToken = useRef(0);
+
+  const handleRefine = async (instruction: string) => {
+    const index = activeIndex;
+    const original = shown;
+    const id = activeId;
+    const token = viewToken.current;
+    const current = () => viewToken.current === token;
+    setError("");
+    setRefining(true);
+    try {
+      const res = await apiFetch(`/generations/${id}/refine`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ instruction }),
+      });
+      if (!res.ok) throw new Error(await errorDetail(res, "Failed to refine post."));
+      let text = "";
+      let streamError = "";
+      let done = false;
+      await readNdjson<GenerateEvent>(res, (event) => {
+        if (event.delta) {
+          text += event.delta;
+          // A whitespace-only version would be filtered out and shift the indices.
+          if (text.trim() && current()) replaceVersion(index, text);
+        } else if (event.error) streamError = event.error;
+        else if (event.done) done = true;
+      });
+      if (streamError) throw new Error(streamError);
+      if (!done) throw new Error("Refine was interrupted. Please retry.");
+      if (!current()) return;
+      setRefineText("");
+      setRefreshHistory((n) => n + 1);
+    } catch (err: unknown) {
+      if (!current()) return;
+      replaceVersion(index, original);
+      setError(err instanceof Error ? err.message : "Failed to refine post.");
+    } finally {
+      setRefining(false);
+    }
+  };
+
+  const handleSaveEdit = async () => {
+    const token = viewToken.current;
+    setSavingEdit(true);
+    try {
+      const res = await apiFetch(`/generations/${activeId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ generated_post: draft }),
+      });
+      if (!res.ok) throw new Error(await errorDetail(res, "Failed to save your edit."));
+      if (viewToken.current !== token) return;
+      replaceVersion(activeIndex, draft.trim());
+      setEditing(false);
+      setRefreshHistory((n) => n + 1);
+    } catch (err: unknown) {
+      if (viewToken.current !== token) return;
+      setError(err instanceof Error ? err.message : "Failed to save your edit.");
+    } finally {
+      setSavingEdit(false);
+    }
+  };
 
   useEffect(() => {
     apiFetch("/profile")
@@ -119,6 +208,7 @@ export default function Home() {
   };
 
   const handleGenerate = async () => {
+    if (loading || refining) return;
     if (inputMode === "url" && !url) {
       setError("Please paste a YouTube URL or article link to continue.");
       return;
@@ -132,10 +222,13 @@ export default function Home() {
       return;
     }
 
+    viewToken.current++;
     setError("");
     setLoading(true);
     setPost("");
     setActiveVersion(0);
+    setGenerationIds([]);
+    setEditing(false);
 
     try {
       let content: string;
@@ -199,6 +292,7 @@ export default function Home() {
         } else if (event.error) streamError = event.error;
         else if (event.done) {
           saved = event.generation_ids?.length ?? 0;
+          setGenerationIds(event.generation_ids ?? []);
           if (saved) setRefreshHistory((n) => n + 1);
         }
       });
@@ -415,11 +509,11 @@ export default function Home() {
           <button
             id="generate-btn"
             onClick={handleGenerate}
-            disabled={loading}
+            disabled={loading || refining}
             className={cn(
               "w-full h-11 rounded-xl flex items-center justify-center gap-2",
               "text-[13.5px] font-semibold tracking-[-0.01em] transition-all duration-200",
-              loading
+              loading || refining
                 ? "bg-white/8 text-white/30 cursor-not-allowed"
                 : "bg-white text-[oklch(0.10_0.008_248)] hover:bg-white/92 active:scale-[0.98] glow-hover"
             )}
@@ -438,7 +532,21 @@ export default function Home() {
               <Sparkles className="w-3.5 h-3.5 text-[oklch(0.72_0.18_255)]" />
               <Label className="!text-white/35">Generated Post</Label>
             </div>
-            {shown && !loading && <CopyButton text={shown} />}
+            {shown && !loading && !editing && (
+              <div className="flex items-center gap-2">
+                {activeId && (
+                  <button
+                    onClick={() => { setDraft(shown); setEditing(true); }}
+                    disabled={refining}
+                    title="Edit post"
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-white/5 text-white/50 border border-white/10 hover:bg-white/10 hover:text-white/80 disabled:opacity-50 transition-all duration-200"
+                  >
+                    <Pencil className="w-3.5 h-3.5" /> Edit
+                  </button>
+                )}
+                <CopyButton text={shown} />
+              </div>
+            )}
           </div>
 
           {versions.length > 1 && (
@@ -448,7 +556,8 @@ export default function Home() {
                   key={i}
                   role="tab"
                   aria-selected={i === activeIndex}
-                  onClick={() => setActiveVersion(i)}
+                  onClick={() => { setActiveVersion(i); setEditing(false); }}
+                  disabled={refining}
                   className={cn(
                     "h-7 px-3 rounded-lg text-[12px] font-medium transition-all duration-200",
                     i === activeIndex ? "bg-white/10 text-white" : "text-white/35 hover:text-white/60"
@@ -478,6 +587,27 @@ export default function Home() {
                 <SkeletonBlock className="h-3 w-4/5" />
                 <SkeletonBlock className="h-3 w-2/3" />
               </div>
+            ) : editing ? (
+              <div className="flex flex-col gap-3 h-full">
+                <textarea
+                  id="post-editor"
+                  aria-label="Edit post"
+                  value={draft}
+                  onChange={(e) => setDraft(e.target.value)}
+                  className="flex-1 min-h-[320px] w-full p-3.5 rounded-xl text-[13.5px] font-light leading-relaxed text-white/85 bg-white/5 border border-white/10 outline-none focus:border-white/20 resize-none"
+                />
+                <div className="flex justify-end gap-2">
+                  <button
+                    onClick={() => setEditing(false)}
+                    className="h-8 px-3 rounded-lg text-[12px] text-white/50 border border-white/10 hover:bg-white/10 transition-all"
+                  >Cancel</button>
+                  <button
+                    onClick={handleSaveEdit}
+                    disabled={savingEdit || !draft.trim()}
+                    className="h-8 px-3 rounded-lg text-[12px] font-semibold bg-white text-[oklch(0.10_0.008_248)] hover:bg-white/92 disabled:opacity-50 transition-all"
+                  >{savingEdit ? "Saving…" : "Save"}</button>
+                </div>
+              </div>
             ) : shown ? (
               <div className="md-output">
                 <ReactMarkdown>{shown}</ReactMarkdown>
@@ -498,6 +628,33 @@ export default function Home() {
               </div>
             )}
           </div>
+
+          {shown && activeId && !loading && !editing && (
+            <div className="flex flex-wrap items-center gap-1.5 px-6 py-4 border-t border-white/[0.06]">
+              {REFINE_PRESETS.map((preset) => (
+                <button
+                  key={preset}
+                  onClick={() => handleRefine(preset)}
+                  disabled={refining}
+                  className="h-7 px-3 rounded-lg text-[12px] text-white/50 bg-white/5 border border-white/10 hover:bg-white/10 hover:text-white/80 disabled:opacity-50 transition-all"
+                >{preset}</button>
+              ))}
+              <form
+                className="flex-1 min-w-[160px]"
+                onSubmit={(e) => { e.preventDefault(); if (refineText.trim()) handleRefine(refineText); }}
+              >
+                <input
+                  aria-label="Custom refine instruction"
+                  placeholder={refining ? "Refining…" : "Or tell the AI what to change, then Enter"}
+                  value={refineText}
+                  onChange={(e) => setRefineText(e.target.value)}
+                  disabled={refining}
+                  maxLength={1000}
+                  className="w-full h-7 px-3 rounded-lg text-[12px] text-white/80 placeholder-white/20 bg-white/5 border border-white/10 outline-none focus:border-white/20 disabled:opacity-50"
+                />
+              </form>
+            </div>
+          )}
         </GlassCard>
       </div>
 
@@ -512,7 +669,12 @@ export default function Home() {
         open={historyOpen}
         onClose={() => setHistoryOpen(false)}
         onSelect={(gen) => {
+          if (refining) return;
+          viewToken.current++;
           setPost(gen.generated_post);
+          setActiveVersion(0);
+          setGenerationIds([gen.id]);
+          setEditing(false);
           if (gen.source_url) setUrl(gen.source_url);
         }}
         refreshKey={refreshHistory}
