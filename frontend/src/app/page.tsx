@@ -664,7 +664,9 @@ export default function Home() {
         </p>
       </footer>
 
-      <SettingsDrawer open={settingsOpen} onClose={() => setSettingsOpen(false)} onSaved={handleSettingsSaved} onLogout={handleLogout} />
+      {settingsOpen && (
+        <SettingsDrawer onClose={() => setSettingsOpen(false)} onSaved={handleSettingsSaved} onLogout={handleLogout} />
+      )}
       {historyOpen && (
         <HistorySidebar
           onClose={() => setHistoryOpen(false)}

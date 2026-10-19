@@ -14,24 +14,22 @@ interface Profile {
   sample_posts: string;
 }
 
+// Mounted only while open, so each open reloads the profile.
 interface Props {
-  open: boolean;
   onClose: () => void;
   onSaved: (profile: Profile) => void;
   onLogout: () => void;
 }
 
-export default function SettingsDrawer({ open, onClose, onSaved, onLogout }: Props) {
+export default function SettingsDrawer({ onClose, onSaved, onLogout }: Props) {
   const [form, setForm] = useState<Profile>({
     name: "", job_title: "", niche: "", tone: "", linkedin_headline: "", bio: "", sample_posts: "",
   });
   const [saving, setSaving] = useState(false);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [loggingOut, setLoggingOut] = useState(false);
 
   useEffect(() => {
-    if (!open) return;
-    setLoading(true);
     apiFetch("/profile")
       .then((r) => r.json())
       .then((data) => {
@@ -49,7 +47,7 @@ export default function SettingsDrawer({ open, onClose, onSaved, onLogout }: Pro
       })
       .catch(() => {})
       .finally(() => setLoading(false));
-  }, [open]);
+  }, []);
 
   const handleSave = async () => {
     setSaving(true);
@@ -67,8 +65,6 @@ export default function SettingsDrawer({ open, onClose, onSaved, onLogout }: Pro
       setSaving(false);
     }
   };
-
-  if (!open) return null;
 
   return (
     <div className="fixed inset-0 z-50 flex justify-end">
