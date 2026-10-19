@@ -40,7 +40,7 @@ async def test_edit_post_rejects_empty_text(client, auth_headers, generation):
 
 
 async def test_cannot_edit_another_users_post(client, db_pool, generation):
-    other = await create_user(f"other-{uuid.uuid4().hex[:8]}@example.com", "x")
+    other = await create_user(f"pytest-other-{uuid.uuid4().hex[:8]}@example.com", "x")
     try:
         resp = await client.patch(
             f"/generations/{generation['id']}",

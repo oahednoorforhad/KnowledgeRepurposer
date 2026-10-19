@@ -1,7 +1,5 @@
-CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
-
 CREATE TABLE IF NOT EXISTS users (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     email TEXT UNIQUE NOT NULL,
     hashed_password TEXT NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
@@ -20,7 +18,7 @@ CREATE TABLE IF NOT EXISTS user_profiles (
 );
 
 CREATE TABLE IF NOT EXISTS generations (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     source_url TEXT,
     source_type TEXT NOT NULL,
@@ -45,7 +43,7 @@ CREATE INDEX IF NOT EXISTS idx_generations_created_at ON generations(created_at 
 CREATE INDEX IF NOT EXISTS idx_generations_user_source ON generations(user_id, source_url);
 
 CREATE TABLE IF NOT EXISTS refresh_tokens (
-    id         UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id    UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     token_hash TEXT NOT NULL,
     expires_at TIMESTAMPTZ NOT NULL,
@@ -58,3 +56,10 @@ CREATE INDEX IF NOT EXISTS idx_refresh_tokens_token_hash ON refresh_tokens(token
 CREATE INDEX IF NOT EXISTS idx_refresh_tokens_expires_at ON refresh_tokens(expires_at);
 
 ALTER TABLE user_profiles ADD COLUMN IF NOT EXISTS sample_posts TEXT;
+
+-- Supabase exposes public tables through its Data API with the public anon key.
+-- RLS with no policies denies that path; the backend's postgres role bypasses RLS.
+ALTER TABLE users          ENABLE ROW LEVEL SECURITY;
+ALTER TABLE user_profiles  ENABLE ROW LEVEL SECURITY;
+ALTER TABLE generations    ENABLE ROW LEVEL SECURITY;
+ALTER TABLE refresh_tokens ENABLE ROW LEVEL SECURITY;

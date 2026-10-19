@@ -163,7 +163,7 @@ class TestRegisterRateLimit:
         client = _make_client(self.IP)
 
         for i in range(3):
-            email = f"ratelimit-{uuid.uuid4().hex[:8]}@test.com"
+            email = f"pytest-ratelimit-{uuid.uuid4().hex[:8]}@test.com"
             resp = await client.post(
                 "/auth/register",
                 json={"email": email, "password": "test-password-ok"},
@@ -173,7 +173,7 @@ class TestRegisterRateLimit:
             )
 
         # 4th attempt — rate limited (unique email so we don't hit 409)
-        email = f"ratelimit-{uuid.uuid4().hex[:8]}@test.com"
+        email = f"pytest-ratelimit-{uuid.uuid4().hex[:8]}@test.com"
         resp = await client.post(
             "/auth/register",
             json={"email": email, "password": "test-password-ok"},
@@ -201,7 +201,7 @@ class TestInputValidation:
     async def test_register_short_password_returns_422(self, client):
         resp = await client.post(
             "/auth/register",
-            json={"email": "valid@test.com", "password": "short"},
+            json={"email": "pytest-valid@test.com", "password": "short"},
         )
         assert resp.status_code == 422
 
@@ -211,7 +211,7 @@ class TestInputValidation:
         from app.repositories.user_repo import create_user
 
         _requests.clear()
-        email = f"legacy-{uuid.uuid4().hex[:8]}@example.com"
+        email = f"pytest-legacy-{uuid.uuid4().hex[:8]}@example.com"
         user = await create_user(email, hash_password("short1"))
         try:
             ok = await client.post("/auth/login", json={"email": email, "password": "short1"})
@@ -246,7 +246,7 @@ class TestEmailNormalization:
     async def test_register_upper_then_login_lower(self):
         """Register with mixed-case email, then login with lowercased version."""
         client = _make_client(self.IP)
-        email = f"EmailCase-{uuid.uuid4().hex[:8]}@Test.COM"
+        email = f"pytest-EmailCase-{uuid.uuid4().hex[:8]}@Test.COM"
         password = "test-password-ok"
 
         resp = await client.post(
@@ -274,7 +274,7 @@ class TestEmailNormalization:
         from app.repositories.user_repo import create_user
 
         client = _make_client(self.IP)
-        email = f"EmailUpperTest-{uuid.uuid4().hex[:8]}@Example.COM"
+        email = f"pytest-EmailUpperTest-{uuid.uuid4().hex[:8]}@Example.COM"
         password = "test-password-ok"
 
         user = await create_user(email, hash_password(password))

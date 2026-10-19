@@ -16,7 +16,7 @@ flowchart LR
         LLM[LLM Service]
     end
 
-    DB[(PostgreSQL)]
+    DB[(Supabase Postgres)]
 
     UI --> Input --> API
     API --> Scraper --> LLM --> API
@@ -51,7 +51,7 @@ flowchart LR
 | Layer | Tech |
 |-------|------|
 | Backend | **FastAPI** (Python 3.13) — `uvicorn` |
-| Database | **PostgreSQL 16** — `asyncpg` |
+| Database | **Supabase** (Postgres) — `asyncpg` via the transaction pooler |
 | Scrapers | `pypdf`, `requests`, `newspaper3k`, custom YouTube logic |
 | LLM Service | OpenRouter via `openai` SDK — `tenacity` retry, `tiktoken` token counting |
 | Logging | `loguru` — request middleware + structured logs |
@@ -65,7 +65,7 @@ flowchart LR
 ### Prerequisites
 - **Python 3.13+** and **uv**
 - **Node.js 20+** and **npm**
-- **PostgreSQL** running locally
+- A [Supabase](https://supabase.com/) project
 - An [OpenRouter](https://openrouter.ai/) API key
 
 ### 1. Environment
@@ -73,7 +73,10 @@ flowchart LR
 ```bash
 cp .env.example .env
 # Edit .env — set OPENAI_API_KEY, JWT_SECRET, DATABASE_URL
+# DATABASE_URL: Supabase dashboard -> Connect -> Transaction pooler (port 6543)
 ```
+
+Tests write to the database: set `TEST_DATABASE_URL` to a separate Supabase project so `pytest` never touches real data.
 
 ### 2. Backend
 
@@ -85,11 +88,10 @@ uv run uvicorn main:app --reload
 
 ### 3. Database (first run)
 
-```bash
-# Apply schema to your local Postgres. The file is idempotent: re-run it
-# to upgrade an existing DB (it adds refresh_tokens and new columns if missing).
-psql $DATABASE_URL -f db/schema.sql
-```
+Open your Supabase project -> **SQL Editor**, paste [`db/schema.sql`](db/schema.sql) and run it.
+The file is idempotent, so re-run it after pulling schema changes. It enables RLS on every
+table, so Supabase's public Data API can't read them; the backend connects as `postgres`
+and is unaffected.
 
 ### 4. Frontend
 
@@ -102,19 +104,17 @@ npm run dev
 
 ---
 
-## 🐳 Docker (full stack)
+## 🐳 Docker (API)
 
 ```bash
 cp .env.example .env
-# Edit .env — set OPENAI_API_KEY and JWT_SECRET
-# Leave DATABASE_URL host as 'db' for Docker networking
+# Edit .env — set OPENAI_API_KEY, JWT_SECRET and the Supabase DATABASE_URL
 
 docker compose up -d
 # API: http://localhost:8000
-# DB:  localhost:5432
 ```
 
-`docker compose down -v` to tear down including the DB volume.
+`docker compose down` to stop it. The database lives in Supabase.
 
 ---
 

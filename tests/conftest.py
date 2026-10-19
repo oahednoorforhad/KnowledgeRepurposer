@@ -8,6 +8,15 @@ Provides:
 """
 
 import os
+
+from dotenv import load_dotenv
+
+# Point the suite at a separate database when TEST_DATABASE_URL is set (env or
+# .env). Must run before app imports; main.py's load_dotenv() won't override it.
+load_dotenv()
+if os.getenv("TEST_DATABASE_URL"):
+    os.environ["DATABASE_URL"] = os.environ["TEST_DATABASE_URL"]
+
 os.environ.setdefault(
     "JWT_SECRET",
     "test-secret-key-that-is-at-least-32-characters-long",
@@ -26,15 +35,18 @@ from main import app
 # ---------------------------------------------------------------------------
 # db_pool
 # ---------------------------------------------------------------------------
-@pytest.fixture(scope="session")
+@pytest.fixture(scope="session", autouse=True)
 async def db_pool():
     """Initialise the asyncpg connection pool for the test session.
 
-    The pool is created once and shared by all tests.  It is closed
-    automatically when the session ends.
+    The pool is created once and shared by all tests.  When the session
+    ends it deletes users that register tests create directly via the API
+    (all emails start with ``pytest-``) and closes the pool.
     """
     pool = await get_pool()
     yield pool
+    async with pool.acquire() as conn:
+        await conn.execute("DELETE FROM users WHERE email LIKE 'pytest-%'")
     await close_pool()
 
 
@@ -69,7 +81,7 @@ async def test_user(db_pool):
     """
     from app.repositories.user_repo import create_user
 
-    email = f"test-{uuid.uuid4().hex[:8]}@example.com"
+    email = f"pytest-test-{uuid.uuid4().hex[:8]}@example.com"
     password = "test-password-123"
     hashed = hash_password(password)
 

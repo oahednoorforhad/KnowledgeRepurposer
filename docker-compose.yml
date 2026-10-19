@@ -1,25 +1,9 @@
+# The database is Supabase (set DATABASE_URL in .env); only the API runs here.
 services:
-  db:
-    image: postgres:16-alpine
-    environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: password
-      POSTGRES_DB: poster
-    ports:
-      - "5432:5432"
-    volumes:
-      - pgdata:/var/lib/postgresql/data
-      - ./db/schema.sql:/docker-entrypoint-initdb.d/schema.sql
-
   api:
     build: .
     ports:
       - "8000:8000"
     env_file:
       - .env
-    depends_on:
-      - db
     restart: unless-stopped
-
-volumes:
-  pgdata:

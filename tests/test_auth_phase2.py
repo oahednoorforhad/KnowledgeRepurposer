@@ -33,7 +33,7 @@ class TestLoginSetsCookies:
         assert "httponly" in set_cookie.lower()
 
     async def test_register_sets_cookies(self, client):
-        email = f"reg-cookie-{uuid.uuid4().hex[:8]}@test.com"
+        email = f"pytest-reg-cookie-{uuid.uuid4().hex[:8]}@test.com"
         resp = await client.post(
             "/auth/register",
             json={"email": email, "password": "test-password-ok"},
