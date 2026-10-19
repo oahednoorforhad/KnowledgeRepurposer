@@ -109,7 +109,13 @@ def determine_source_type(source: str) -> str:
 
 @app.post("/api/scrape", response_model=ScrapeResponse)
 async def scrape_source(request: ScrapeRequest, user: dict = Depends(require_current_user)):
-    cached = await get_cached_source(user["id"], request.url)
+    url = request.url.strip()
+    cached = None
+    if url.startswith(("http://", "https://")):
+        try:
+            cached = await get_cached_source(user["id"], url)
+        except Exception as e:
+            logger.warning(f"Scrape cache lookup failed, scraping instead: {e}")
     if cached:
         return ScrapeResponse(
             content=cached["raw_content"], source_type=cached["source_type"], metadata={"cached": True}
