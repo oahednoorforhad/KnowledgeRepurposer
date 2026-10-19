@@ -86,13 +86,13 @@ export default function HistorySidebar({ onClose, onSelect }: Props) {
   return (
     <div className="fixed inset-0 z-50 flex justify-start">
       <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative w-full max-w-sm glass rounded-r-2xl p-5 overflow-y-auto shadow-2xl border-r border-white/10 animate-in slide-in-from-left">
+      <div role="dialog" aria-modal="true" aria-label="History" className="relative w-full max-w-sm glass rounded-r-2xl p-5 overflow-y-auto shadow-2xl border-r border-white/10 animate-in slide-in-from-left">
         <div className="flex items-center justify-between mb-5">
           <div className="flex items-center gap-2">
             <Clock className="w-4 h-4 text-white/50" />
             <h2 className="text-sm font-semibold text-white tracking-[-0.02em]">History</h2>
           </div>
-          <button onClick={onClose} className="text-white/40 hover:text-white/80 transition-colors">
+          <button onClick={onClose} aria-label="Close" className="text-white/40 hover:text-white/80 transition-colors">
             <X className="w-4 h-4" />
           </button>
         </div>

@@ -84,10 +84,10 @@ export default function SettingsDrawer({ onClose, onSaved, onLogout }: Props) {
   return (
     <div className="fixed inset-0 z-50 flex justify-end">
       <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative w-full max-w-md glass rounded-l-2xl p-6 overflow-y-auto shadow-2xl border-l border-white/10 animate-in slide-in-from-right">
+      <div role="dialog" aria-modal="true" aria-label="Profile settings" className="relative w-full max-w-md glass rounded-l-2xl p-6 overflow-y-auto shadow-2xl border-l border-white/10 animate-in slide-in-from-right">
         <div className="flex items-center justify-between mb-6">
           <h2 className="text-base font-semibold text-white tracking-[-0.02em]">Your Profile</h2>
-          <button onClick={onClose} className="text-white/40 hover:text-white/80 transition-colors">
+          <button onClick={onClose} aria-label="Close" className="text-white/40 hover:text-white/80 transition-colors">
             <X className="w-4 h-4" />
           </button>
         </div>
