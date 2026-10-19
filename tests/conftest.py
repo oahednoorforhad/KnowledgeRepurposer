@@ -26,15 +26,18 @@ from main import app
 # ---------------------------------------------------------------------------
 # db_pool
 # ---------------------------------------------------------------------------
-@pytest.fixture(scope="session")
+@pytest.fixture(scope="session", autouse=True)
 async def db_pool():
     """Initialise the asyncpg connection pool for the test session.
 
-    The pool is created once and shared by all tests.  It is closed
-    automatically when the session ends.
+    The pool is created once and shared by all tests.  When the session
+    ends it deletes users that register tests create directly via the API
+    (all use @test.com emails) and closes the pool.
     """
     pool = await get_pool()
     yield pool
+    async with pool.acquire() as conn:
+        await conn.execute("DELETE FROM users WHERE email LIKE '%@test.com'")
     await close_pool()
 
 
