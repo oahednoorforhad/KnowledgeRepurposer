@@ -124,7 +124,7 @@ export default function HistorySidebar({ open, onClose, onSelect, refreshKey }: 
                     </div>
                   </div>
 
-                  <div className="hidden group-hover:flex items-center gap-1 shrink-0">
+                  <div className="hidden group-hover:flex group-focus-within:flex items-center gap-1 shrink-0">
                     <button
                       onClick={(e) => { e.stopPropagation(); onSelect(gen); onClose(); }}
                       title="Re-run"
