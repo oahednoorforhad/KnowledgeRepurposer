@@ -175,6 +175,7 @@ export default function Home() {
         else if (event.done) {
           finished = true;
           if (event.generation_id) setRefreshHistory((n) => n + 1);
+          else setError("Post generated but not saved to history.");
         }
       });
       if (streamError) throw new Error(streamError);
