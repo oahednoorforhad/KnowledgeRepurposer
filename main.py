@@ -265,6 +265,8 @@ async def generate_linkedin_post(request: GeneratePostRequest, user: dict = Depe
         )
 
     # Per-user rate limit (in-memory, resets on restart)
+    # ponytail: quota is charged before streaming, so failed generations still count, and a
+    # client disconnect mid-stream skips saving. Upgrade: charge on first delta, save in a background task.
     _allowed, _retry_after = check_rate_limit(str(user["id"]))
     if not _allowed:
         raise HTTPException(
