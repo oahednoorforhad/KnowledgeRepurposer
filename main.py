@@ -15,14 +15,14 @@ from app.scrapers import YouTubeScraper, ArticleScraper, PdfScraper, MarkdownScr
 from app.services.llm import LLMService
 from app.auth import require_current_user, _validate_jwt_secret
 from app.repositories.profile_repo import get_profile
-from app.repositories.generation_repo import create_generation
+from app.repositories.generation_repo import create_generation, get_generation, update_post
 from app.routers.auth_router import router as auth_router
 from app.routers.profile_router import router as profile_router
 from app.routers.generation_router import router as generation_router
 from db.connection import get_pool, close_pool
 from fastapi.responses import JSONResponse, StreamingResponse
 from loguru import logger
-from app.services.llm import build_messages, count_tokens, split_variants
+from app.services.llm import build_messages, build_refine_messages, count_tokens, split_variants
 from app.services.rate_limiter import check_rate_limit
 from app.middleware.logging import LoggingMiddleware
 
@@ -341,5 +341,26 @@ async def generate_linkedin_post(request: GeneratePostRequest, user: dict = Depe
             )
             generation_ids.append(str(gen["id"]))
         return {"generation_ids": generation_ids}
+
+    return _stream_llm(messages, request.api_key, save)
+
+
+class RefineRequest(BaseModel):
+    instruction: str = Field(min_length=1, max_length=1000)
+    api_key: str | None = None
+
+
+@app.post("/generations/{generation_id}/refine")
+async def refine_generation(generation_id: str, request: RefineRequest, user: dict = Depends(require_current_user)):
+    gen = await get_generation(generation_id, user["id"])
+    if gen is None:
+        raise HTTPException(status_code=404, detail="Generation not found")
+    profile = await _require_profile(user)
+    messages = build_refine_messages(gen["generated_post"], request.instruction, profile)
+    _check_generation_limits(user, messages)
+
+    async def save(post: str, final: dict) -> dict:
+        await update_post(generation_id, user["id"], post.strip())
+        return {"generation_id": generation_id}
 
     return _stream_llm(messages, request.api_key, save)

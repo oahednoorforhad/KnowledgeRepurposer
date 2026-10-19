@@ -60,3 +60,35 @@ def test_refine_messages_include_post_and_instruction():
     assert system["role"] == "system" and "T" in system["content"]
     assert "My post" in user["content"]
     assert user["content"].endswith("Instruction:\nmake it shorter")
+
+
+async def test_refine_streams_and_overwrites_post(client, auth_headers, generation):
+    import json
+    from unittest import mock
+
+    async def fake_stream(messages, api_key=None):
+        assert "Original post" in messages[1]["content"]
+        yield {"delta": "Shorter post"}
+        yield {"model_used": "m", "usage": {}}
+
+    with (
+        mock.patch("main.get_profile", return_value={"name": "Tester"}),
+        mock.patch("main.llm_service.stream_post", fake_stream),
+    ):
+        resp = await client.post(
+            f"/generations/{generation['id']}/refine",
+            json={"instruction": "make it shorter"},
+            headers=auth_headers,
+        )
+
+    events = [json.loads(line) for line in resp.text.splitlines()]
+    assert events[-1] == {"done": True, "model_used": "m", "generation_id": str(generation["id"])}
+    saved = await client.get(f"/generations/{generation['id']}", headers=auth_headers)
+    assert saved.json()["generated_post"] == "Shorter post"
+
+
+async def test_refine_unknown_generation_returns_404(client, auth_headers):
+    resp = await client.post(
+        f"/generations/{uuid.uuid4()}/refine", json={"instruction": "x"}, headers=auth_headers
+    )
+    assert resp.status_code == 404
