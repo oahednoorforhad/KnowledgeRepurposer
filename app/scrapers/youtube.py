@@ -3,7 +3,6 @@ import re
 from dataclasses import dataclass
 from urllib.parse import urlparse, parse_qs
 
-import requests
 from youtube_transcript_api import RequestBlocked, YouTubeTranscriptApi
 from youtube_transcript_api.proxies import GenericProxyConfig
 
@@ -11,41 +10,6 @@ BLOCKED_MESSAGE = (
     "YouTube is blocking transcript requests from this server. "
     "Paste the transcript as text instead."
 )
-
-from app.services.llm import MODELS
-
-GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
-GEMINI_PROMPT = (
-    "Transcribe the spoken content of this video verbatim as plain text. "
-    "No timestamps, speaker labels, headings or commentary."
-)
-
-
-def gemini_transcript(video_id: str, api_key: str) -> str:
-    """Google fetches the video itself, so YouTube's cloud-IP block does not apply. Public videos only."""
-    body = {
-        "contents": [{"parts": [
-            {"file_data": {"file_uri": f"https://www.youtube.com/watch?v={video_id}"}},
-            {"text": GEMINI_PROMPT},
-        ]}],
-        # Low resolution cuts video tokens ~3x; the frames barely matter for a transcript.
-        "generationConfig": {"mediaResolution": "MEDIA_RESOLUTION_LOW"},
-    }
-    status = None
-    for model in MODELS:
-        resp = requests.post(
-            GEMINI_URL.format(model=model), headers={"x-goog-api-key": api_key}, json=body, timeout=240,
-        )
-        status = resp.status_code
-        if resp.ok:
-            parts = resp.json().get("candidates", [{}])[0].get("content", {}).get("parts", [])
-            text = "".join(p.get("text", "") for p in parts).strip()
-            if text:
-                return text
-        elif status not in (404, 429, 500, 503):
-            break  # bad key or unsupported video: every model would fail the same way
-    raise RuntimeError(f"Gemini could not transcribe this video ({status}). {BLOCKED_MESSAGE}")
-
 
 @dataclass
 class YouTubeTranscriptResult:
@@ -111,16 +75,7 @@ class YouTubeScraper:
             transcript = transcript_list.find_transcript(lang_codes)
             entries = transcript.fetch()
         except RequestBlocked as e:  # IpBlocked is a subclass
-            api_key = os.getenv("GEMINI_API_KEY")
-            if not api_key:
-                raise RuntimeError(BLOCKED_MESSAGE) from e
-            return YouTubeTranscriptResult(
-                video_id=video_id,
-                title="",
-                duration_seconds=None,
-                transcript=gemini_transcript(video_id, api_key),
-                language="",
-            )
+            raise RuntimeError(BLOCKED_MESSAGE) from e
 
         transcript_text = " ".join(entry.text for entry in entries)
 
