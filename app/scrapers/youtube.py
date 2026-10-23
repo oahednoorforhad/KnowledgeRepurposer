@@ -12,7 +12,9 @@ BLOCKED_MESSAGE = (
     "Paste the transcript as text instead."
 )
 
-GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent"
+from app.services.llm import MODELS
+
+GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
 GEMINI_PROMPT = (
     "Transcribe the spoken content of this video verbatim as plain text. "
     "No timestamps, speaker labels, headings or commentary."
@@ -21,27 +23,28 @@ GEMINI_PROMPT = (
 
 def gemini_transcript(video_id: str, api_key: str) -> str:
     """Google fetches the video itself, so YouTube's cloud-IP block does not apply. Public videos only."""
-    resp = requests.post(
-        GEMINI_URL,
-        headers={"x-goog-api-key": api_key},
-        json={
-            "contents": [{"parts": [
-                {"file_data": {"file_uri": f"https://www.youtube.com/watch?v={video_id}"}},
-                {"text": GEMINI_PROMPT},
-            ]}],
-            # Low resolution cuts video tokens ~3x; the frames barely matter for a transcript.
-            "generationConfig": {"mediaResolution": "MEDIA_RESOLUTION_LOW"},
-        },
-        timeout=240,
-    )
-    if not resp.ok:
-        raise RuntimeError(f"Gemini could not transcribe this video ({resp.status_code}). {BLOCKED_MESSAGE}")
-    parts = resp.json().get("candidates", [{}])[0].get("content", {}).get("parts", [])
-    text = "".join(p.get("text", "") for p in parts).strip()
-    if not text:
-        raise RuntimeError(f"Gemini returned no transcript. {BLOCKED_MESSAGE}")
-    return text
-
+    body = {
+        "contents": [{"parts": [
+            {"file_data": {"file_uri": f"https://www.youtube.com/watch?v={video_id}"}},
+            {"text": GEMINI_PROMPT},
+        ]}],
+        # Low resolution cuts video tokens ~3x; the frames barely matter for a transcript.
+        "generationConfig": {"mediaResolution": "MEDIA_RESOLUTION_LOW"},
+    }
+    status = None
+    for model in MODELS:
+        resp = requests.post(
+            GEMINI_URL.format(model=model), headers={"x-goog-api-key": api_key}, json=body, timeout=240,
+        )
+        status = resp.status_code
+        if resp.ok:
+            parts = resp.json().get("candidates", [{}])[0].get("content", {}).get("parts", [])
+            text = "".join(p.get("text", "") for p in parts).strip()
+            if text:
+                return text
+        elif status not in (404, 429, 500, 503):
+            break  # bad key or unsupported video: every model would fail the same way
+    raise RuntimeError(f"Gemini could not transcribe this video ({status}). {BLOCKED_MESSAGE}")
 
 
 @dataclass

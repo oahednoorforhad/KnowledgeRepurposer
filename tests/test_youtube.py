@@ -56,3 +56,13 @@ async def test_gemini_failure_returns_422(client, auth_headers, monkeypatch):
         )
     assert resp.status_code == 422
     assert BLOCKED_MESSAGE in resp.json()["detail"]
+
+
+def test_gemini_transcript_falls_through_rate_limited_models():
+    from app.scrapers.youtube import gemini_transcript
+    from app.services.llm import MODELS
+
+    replies = [_gemini_reply(status=429), _gemini_reply(text="second model")]
+    with mock.patch("app.scrapers.youtube.requests.post", side_effect=replies) as post:
+        assert gemini_transcript("scwlR0QHGOk", "k") == "second model"
+    assert MODELS[1] in post.call_args.args[0]
