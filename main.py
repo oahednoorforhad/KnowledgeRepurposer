@@ -1,3 +1,4 @@
+import asyncio
 import json
 import os
 import urllib.parse
@@ -124,29 +125,16 @@ async def scrape_source(request: ScrapeRequest, user: dict = Depends(require_cur
     source_type = determine_source_type(request.url)
 
     if source_type == "youtube":
+        # No transcript: generate sends the video URL straight to Gemini, which watches it.
         try:
             video_id = youtube_scraper.extract_video_id(request.url)
-            result = youtube_scraper.get_transcript(video_id)
-            return ScrapeResponse(
-                content=result.transcript,
-                source_type="youtube",
-                metadata={
-                    "video_id": result.video_id,
-                    "title": result.title,
-                    "duration_seconds": result.duration_seconds,
-                    "language": result.language,
-                }
-            )
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e))
-        except RuntimeError as e:
-            raise HTTPException(status_code=422, detail=str(e))
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=f"YouTube extraction error: {e}")
+        return ScrapeResponse(content="", source_type="youtube", metadata={"video_id": video_id})
 
     elif source_type == "article":
         try:
-            content = article_scraper.scrape(request.url)
+            content = await asyncio.to_thread(article_scraper.scrape, request.url)
             if not content:
                 raise HTTPException(
                     status_code=422,
@@ -160,7 +148,7 @@ async def scrape_source(request: ScrapeRequest, user: dict = Depends(require_cur
 
     elif source_type == "pdf":
         try:
-            content = pdf_scraper.scrape(request.url)
+            content = await asyncio.to_thread(pdf_scraper.scrape, request.url)
             if not content:
                 raise HTTPException(
                     status_code=422,
@@ -174,7 +162,7 @@ async def scrape_source(request: ScrapeRequest, user: dict = Depends(require_cur
 
     elif source_type == "markdown":
         try:
-            content = markdown_scraper.scrape(request.url)
+            content = await asyncio.to_thread(markdown_scraper.scrape, request.url)
             if not content:
                 raise HTTPException(
                     status_code=422,
@@ -203,7 +191,7 @@ async def scrape_youtube(request: YouTubeUrlRequest, user: dict = Depends(requir
         )
     try:
         video_id = youtube_scraper.extract_video_id(request.url)
-        result = youtube_scraper.get_transcript(video_id)
+        result = await asyncio.to_thread(youtube_scraper.get_transcript, video_id)
         return YouTubeTranscriptResponse(
             video_id=result.video_id,
             title=result.title,
@@ -246,7 +234,7 @@ async def scrape_pdf_upload(file: UploadFile = File(...), user: dict = Depends(r
         data = await file.read(_MAX_PDF_BYTES + 1)
         if len(data) > _MAX_PDF_BYTES:
             raise HTTPException(status_code=413, detail="File too large. Maximum size is 10MB.")
-        content = pdf_scraper.scrape_bytes(data)
+        content = await asyncio.to_thread(pdf_scraper.scrape_bytes, data)
         if not content:
             raise HTTPException(
                 status_code=422,
@@ -290,13 +278,13 @@ def _check_generation_limits(user: dict, messages: list[dict]) -> None:
         )
 
 
-def _stream_llm(messages: list[dict], api_key: str | None, save) -> StreamingResponse:
+def _stream_llm(messages: list[dict], api_key: str | None, save, video_url: str | None = None) -> StreamingResponse:
     """Stream NDJSON: {"delta": text}* then {"done": true, "model_used", **await save(post, final)}
     or {"error": message}. Errors after streaming starts can't change the HTTP status."""
     async def events():
         post, final = "", {}
         try:
-            async for event in llm_service.stream_post(messages, api_key=api_key):
+            async for event in llm_service.stream_post(messages, api_key=api_key, video_url=video_url):
                 if "delta" in event:
                     post += event["delta"]
                     yield _ndjson(event)
@@ -331,7 +319,14 @@ def _ndjson(obj: dict) -> str:
 @app.post("/api/generate/linkedin-post")
 async def generate_linkedin_post(request: GeneratePostRequest, user: dict = Depends(require_current_user)):
     profile = await _require_profile(user)
-    messages = build_messages(request.transcript, request.creative_direction, profile, request.variants)
+    video_url = None
+    if request.source_type == "youtube" and request.source_url and not request.transcript.strip():
+        try:
+            video_id = youtube_scraper.extract_video_id(request.source_url)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+        video_url = f"https://www.youtube.com/watch?v={video_id}"
+    messages = build_messages(request.transcript, request.creative_direction, profile, request.variants, video=bool(video_url))
     _check_generation_limits(user, messages)
 
     async def save(post: str, final: dict) -> dict:
@@ -349,7 +344,7 @@ async def generate_linkedin_post(request: GeneratePostRequest, user: dict = Depe
                 user_id=user["id"],
                 source_url=request.source_url,
                 source_type=request.source_type or "youtube",
-                raw_content=request.transcript[:RAW_CONTENT_LIMIT],
+                raw_content=request.transcript[:RAW_CONTENT_LIMIT] or None,
                 creative_direction=request.creative_direction,
                 generated_post=variant,
                 model_used=final.get("model_used"),
@@ -359,7 +354,7 @@ async def generate_linkedin_post(request: GeneratePostRequest, user: dict = Depe
             generation_ids.append(str(gen["id"]))
         return {"generation_ids": generation_ids}
 
-    return _stream_llm(messages, request.api_key, save)
+    return _stream_llm(messages, request.api_key, save, video_url)
 
 
 class RefineRequest(BaseModel):

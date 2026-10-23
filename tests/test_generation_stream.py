@@ -47,7 +47,7 @@ async def test_stream_post_falls_back_when_primary_unavailable():
 
 
 async def test_generate_endpoint_streams_ndjson_and_saves(client, auth_headers):
-    async def fake_stream(messages, api_key=None):
+    async def fake_stream(messages, api_key=None, video_url=None):
         yield {"delta": "Post "}
         yield {"delta": "body"}
         yield {"model_used": "m", "usage": {"input_tokens": 1, "output_tokens": 2}}
@@ -74,7 +74,7 @@ async def test_generate_endpoint_streams_ndjson_and_saves(client, auth_headers):
 
 
 async def test_generate_endpoint_saves_each_variant(client, auth_headers):
-    async def fake_stream(messages, api_key=None):
+    async def fake_stream(messages, api_key=None, video_url=None):
         assert "Write 2 distinct versions" in messages[1]["content"]
         yield {"delta": f"One\n{VARIANT_SEPARATOR}\nTwo"}
         yield {"model_used": "m", "usage": {"input_tokens": 5, "output_tokens": 6}}
@@ -98,7 +98,7 @@ async def test_generate_endpoint_saves_each_variant(client, auth_headers):
 async def test_generate_endpoint_single_variant_ignores_separator(client, auth_headers):
     text = f"One\n{VARIANT_SEPARATOR}\nTwo"
 
-    async def fake_stream(messages, api_key=None):
+    async def fake_stream(messages, api_key=None, video_url=None):
         yield {"delta": text}
         yield {"model_used": "m", "usage": {}}
 
@@ -128,7 +128,7 @@ async def test_generate_endpoint_rejects_too_many_variants(client, auth_headers)
 
 
 async def test_generate_endpoint_reports_llm_error_in_stream(client, auth_headers):
-    async def failing_stream(messages, api_key=None):
+    async def failing_stream(messages, api_key=None, video_url=None):
         raise RuntimeError("All models are currently unavailable")
         yield  # pragma: no cover
 

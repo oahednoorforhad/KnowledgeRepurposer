@@ -66,7 +66,7 @@ async def test_refine_streams_and_overwrites_post(client, auth_headers, generati
     import json
     from unittest import mock
 
-    async def fake_stream(messages, api_key=None):
+    async def fake_stream(messages, api_key=None, video_url=None):
         assert "Original post" in messages[1]["content"]
         yield {"delta": "Shorter post"}
         yield {"model_used": "m", "usage": {}}
@@ -98,7 +98,7 @@ async def _refine_events(client, auth_headers, generation, deltas):
     import json
     from unittest import mock
 
-    async def fake_stream(messages, api_key=None):
+    async def fake_stream(messages, api_key=None, video_url=None):
         for d in deltas:
             yield {"delta": d}
         yield {"model_used": "m", "usage": {}}

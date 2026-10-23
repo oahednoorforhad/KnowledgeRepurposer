@@ -1,5 +1,8 @@
 import logging
 
+import json
+
+import httpx
 import openai
 import tiktoken
 from langsmith import wrappers, traceable
@@ -21,6 +24,9 @@ MODELS = (
     "gemini-3-flash-preview",
 )
 GEMINI_OPENAI_URL = "https://generativelanguage.googleapis.com/v1beta/openai/"
+GEMINI_STREAM_URL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:streamGenerateContent?alt=sse"
+# Errors worth trying the next model for; anything else (bad key, private video) fails the same everywhere.
+FALLBACK_STATUSES = {404, 429, 500, 503}
 
 
 def count_tokens(messages: list[dict], model: str = "gpt-4o") -> int:
@@ -51,11 +57,15 @@ def build_messages(
     creative_direction: str | None = None,
     profile: dict | None = None,
     variants: int = 1,
+    video: bool = False,
 ) -> list[dict]:
     # Optional creative_direction is APPENDED as additive guidance —
     # it can add constraints (e.g. "keep under 8 lines") but cannot
     # override or replace any rule in the system prompt.
     user_content = (
+        "Transform the attached video into a LinkedIn post "
+        "following ALL rules from your system instructions."
+        if video else
         "Here is the transcript to transform into a LinkedIn post "
         "following ALL rules from your system instructions:\n\n"
         f"{transcript}"
@@ -119,15 +129,20 @@ class LLMService:
         self.default_api_key = api_key
 
     @traceable(name="Stream LinkedIn Post")
-    async def stream_post(self, messages: list[dict], api_key: str | None = None):
+    async def stream_post(self, messages: list[dict], api_key: str | None = None, video_url: str | None = None):
         """Yield {"delta": text} chunks, then a final {"model_used": ..., "usage": ...}.
 
         Falls back to the next model only if one fails before producing any text;
         once tokens are flowing, an error propagates to the caller.
+        With video_url, Gemini watches the YouTube video itself (no transcript needed).
         """
         key = api_key or self.default_api_key
         if not key:
             raise ValueError("Gemini API key is required")
+        if video_url:
+            async for event in _stream_video(messages, key, video_url):
+                yield event
+            return
 
         # The client stays open for the whole generator and is closed on exit.
         async with openai.AsyncOpenAI(
@@ -177,3 +192,53 @@ class LLMService:
             "All models are currently unavailable or rate-limited. "
             "Please retry in a moment."
         )
+
+
+async def _stream_video(messages: list[dict], key: str, video_url: str):
+    """Same contract as stream_post, over Gemini's native API: only it accepts a YouTube URL."""
+    system = "\n\n".join(m["content"] for m in messages if m["role"] == "system")
+    user = "\n\n".join(m["content"] for m in messages if m["role"] == "user")
+    body = {
+        "systemInstruction": {"parts": [{"text": system}]},
+        "contents": [{"role": "user", "parts": [{"file_data": {"file_uri": video_url}}, {"text": user}]}],
+        # Low resolution cuts video tokens ~3x; the post depends on what is said, not on frames.
+        "generationConfig": {"temperature": 0.7, "mediaResolution": "MEDIA_RESOLUTION_LOW"},
+    }
+    async with httpx.AsyncClient(timeout=httpx.Timeout(30, read=240)) as client:
+        for model in MODELS:
+            produced = False
+            usage: dict = {"input_tokens": None, "output_tokens": None}
+            async with client.stream(
+                "POST", GEMINI_STREAM_URL.format(model=model), headers={"x-goog-api-key": key}, json=body,
+            ) as resp:
+                if resp.status_code in FALLBACK_STATUSES:
+                    continue
+                if resp.status_code != 200:
+                    await resp.aread()
+                    try:
+                        detail = resp.json()["error"]["message"]
+                    except Exception:
+                        detail = f"HTTP {resp.status_code}"
+                    raise ValueError(f"Gemini could not process this video: {detail}")
+                async for line in resp.aiter_lines():
+                    if not line.startswith("data:"):
+                        continue
+                    chunk = json.loads(line[5:])
+                    meta = chunk.get("usageMetadata")
+                    if meta:
+                        usage = {
+                            "input_tokens": meta.get("promptTokenCount"),
+                            "output_tokens": meta.get("candidatesTokenCount"),
+                        }
+                    for part in (chunk.get("candidates") or [{}])[0].get("content", {}).get("parts", []):
+                        if part.get("text") and not part.get("thought"):
+                            produced = True
+                            yield {"delta": part["text"]}
+            if produced:
+                yield {"model_used": model, "usage": usage}
+                return
+
+    raise RuntimeError(
+        "All models are currently unavailable or rate-limited. "
+        "Please retry in a moment."
+    )
