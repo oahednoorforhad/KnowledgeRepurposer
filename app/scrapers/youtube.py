@@ -3,6 +3,7 @@ import re
 from dataclasses import dataclass
 from urllib.parse import urlparse, parse_qs
 
+import requests
 from youtube_transcript_api import RequestBlocked, YouTubeTranscriptApi
 from youtube_transcript_api.proxies import GenericProxyConfig
 
@@ -10,6 +11,37 @@ BLOCKED_MESSAGE = (
     "YouTube is blocking transcript requests from this server. "
     "Paste the transcript as text instead."
 )
+
+GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent"
+GEMINI_PROMPT = (
+    "Transcribe the spoken content of this video verbatim as plain text. "
+    "No timestamps, speaker labels, headings or commentary."
+)
+
+
+def gemini_transcript(video_id: str, api_key: str) -> str:
+    """Google fetches the video itself, so YouTube's cloud-IP block does not apply. Public videos only."""
+    resp = requests.post(
+        GEMINI_URL,
+        headers={"x-goog-api-key": api_key},
+        json={
+            "contents": [{"parts": [
+                {"file_data": {"file_uri": f"https://www.youtube.com/watch?v={video_id}"}},
+                {"text": GEMINI_PROMPT},
+            ]}],
+            # Low resolution cuts video tokens ~3x; the frames barely matter for a transcript.
+            "generationConfig": {"mediaResolution": "MEDIA_RESOLUTION_LOW"},
+        },
+        timeout=240,
+    )
+    if not resp.ok:
+        raise RuntimeError(f"Gemini could not transcribe this video ({resp.status_code}). {BLOCKED_MESSAGE}")
+    parts = resp.json().get("candidates", [{}])[0].get("content", {}).get("parts", [])
+    text = "".join(p.get("text", "") for p in parts).strip()
+    if not text:
+        raise RuntimeError(f"Gemini returned no transcript. {BLOCKED_MESSAGE}")
+    return text
+
 
 
 @dataclass
@@ -76,7 +108,16 @@ class YouTubeScraper:
             transcript = transcript_list.find_transcript(lang_codes)
             entries = transcript.fetch()
         except RequestBlocked as e:  # IpBlocked is a subclass
-            raise RuntimeError(BLOCKED_MESSAGE) from e
+            api_key = os.getenv("GEMINI_API_KEY")
+            if not api_key:
+                raise RuntimeError(BLOCKED_MESSAGE) from e
+            return YouTubeTranscriptResult(
+                video_id=video_id,
+                title="",
+                duration_seconds=None,
+                transcript=gemini_transcript(video_id, api_key),
+                language="",
+            )
 
         transcript_text = " ".join(entry.text for entry in entries)
 
