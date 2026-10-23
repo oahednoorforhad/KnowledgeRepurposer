@@ -693,7 +693,7 @@ export default function Home() {
 
       <footer className="mt-14 text-center relative z-10">
         <p className="text-[11px] text-white/15 tracking-wide font-light">
-          Powered by OpenRouter · LangSmith observability · FastAPI
+          Powered by Gemini · LangSmith observability · FastAPI
         </p>
       </footer>
 

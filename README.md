@@ -1,6 +1,6 @@
 # AI Knowledge-to-LinkedIn Content Engine
 
-A **single-page web app** that extracts insights from YouTube videos, articles, PDFs, or Markdown files and generates premium LinkedIn-ready posts using LLMs via [OpenRouter](https://openrouter.ai/).
+A **single-page web app** that extracts insights from YouTube videos, articles, PDFs, or Markdown files and generates premium LinkedIn-ready posts using the [Gemini API](https://ai.google.dev/gemini-api/docs).
 
 ```mermaid
 flowchart LR
@@ -66,13 +66,13 @@ flowchart LR
 - **Python 3.13+** and **uv**
 - **Node.js 20+** and **npm**
 - A [Supabase](https://supabase.com/) project
-- An [OpenRouter](https://openrouter.ai/) API key
+- A [Gemini API](https://aistudio.google.com/apikey) key
 
 ### 1. Environment
 
 ```bash
 cp .env.example .env
-# Edit .env — set OPENAI_API_KEY, JWT_SECRET, DATABASE_URL
+# Edit .env — set GEMINI_API_KEY, JWT_SECRET, DATABASE_URL
 # DATABASE_URL: Supabase dashboard -> Connect -> Transaction pooler (port 6543)
 ```
 
@@ -108,7 +108,7 @@ npm run dev
 
 ```bash
 cp .env.example .env
-# Edit .env — set OPENAI_API_KEY, JWT_SECRET and the Supabase DATABASE_URL
+# Edit .env — set GEMINI_API_KEY, JWT_SECRET and the Supabase DATABASE_URL
 
 docker compose up -d
 # API: http://localhost:8000
