@@ -57,7 +57,7 @@ youtube_scraper = YouTubeScraper()
 article_scraper = ArticleScraper()
 pdf_scraper = PdfScraper()
 markdown_scraper = MarkdownScraper()
-llm_service = LLMService(api_key=os.getenv("OPENAI_API_KEY"))
+llm_service = LLMService(api_key=os.getenv("GEMINI_API_KEY"))
 
 
 class YouTubeUrlRequest(BaseModel):

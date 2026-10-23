@@ -32,7 +32,7 @@ async def test_stream_post_falls_back_when_primary_unavailable():
     ]
 
     async def fake_open(client, model, messages, temperature):
-        if model == llm.PRIMARY_MODEL:
+        if model == llm.MODELS[0]:
             raise not_found
         return _aiter(fallback_chunks)
 
@@ -42,7 +42,7 @@ async def test_stream_post_falls_back_when_primary_unavailable():
     assert events == [
         {"delta": "Hello "},
         {"delta": "world"},
-        {"model_used": llm.FALLBACK_MODEL, "usage": {"input_tokens": 10, "output_tokens": 2}},
+        {"model_used": llm.MODELS[1], "usage": {"input_tokens": 10, "output_tokens": 2}},
     ]
 
 
@@ -159,7 +159,7 @@ def _status_error(cls, code):
 
 async def test_stream_post_falls_back_when_stream_fails_before_text():
     async def fake_open(client, model, messages, temperature):
-        if model == llm.PRIMARY_MODEL:
+        if model == llm.MODELS[0]:
             return _failing_aiter([_chunk("")], _status_error(openai.InternalServerError, 500))
         return _aiter([_chunk("ok")])
 
@@ -167,7 +167,7 @@ async def test_stream_post_falls_back_when_stream_fails_before_text():
         events = [e async for e in llm.LLMService("k").stream_post([])]
 
     assert events[0] == {"delta": "ok"}
-    assert events[-1]["model_used"] == llm.FALLBACK_MODEL
+    assert events[-1]["model_used"] == llm.MODELS[1]
 
 
 async def test_stream_post_propagates_error_after_text():
@@ -204,4 +204,4 @@ async def test_stream_post_invalid_key_raises_without_fallback():
         else:
             raise AssertionError("expected ValueError")
 
-    assert calls == [llm.PRIMARY_MODEL]
+    assert calls == [llm.MODELS[0]]

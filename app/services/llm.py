@@ -13,10 +13,14 @@ from tenacity import (
 
 from app.prompts import build_prompt
 
-# Primary: NVIDIA Nemotron 3 Super 120B (1M ctx, 120B params) — confirmed live.
-# Fallback: GPT-OSS 120B (131K ctx, GPT-class quality) — confirmed live.
-PRIMARY_MODEL = "nvidia/nemotron-3-super-120b-a12b:free"
-FALLBACK_MODEL = "openai/gpt-oss-120b:free"
+# Gemini API, tried in order: each one that is rate-limited or unavailable falls through to the next.
+MODELS = (
+    "gemini-3.1-flash-lite",
+    "gemini-3.5-flash-lite",
+    "gemini-3.6-flash",
+    "gemini-3-flash-preview",
+)
+GEMINI_OPENAI_URL = "https://generativelanguage.googleapis.com/v1beta/openai/"
 
 
 def count_tokens(messages: list[dict], model: str = "gpt-4o") -> int:
@@ -123,16 +127,16 @@ class LLMService:
         """
         key = api_key or self.default_api_key
         if not key:
-            raise ValueError("OpenAI API key is required")
+            raise ValueError("Gemini API key is required")
 
         # The client stays open for the whole generator and is closed on exit.
         async with openai.AsyncOpenAI(
             api_key=key,
-            base_url="https://openrouter.ai/api/v1"
+            base_url=GEMINI_OPENAI_URL,
         ) as raw_client:
             client = wrappers.wrap_openai(raw_client)
 
-            for model in (PRIMARY_MODEL, FALLBACK_MODEL):
+            for model in MODELS:
                 try:
                     stream = await _open_stream_with_retry(client, model, messages, temperature=0.7)
                 except openai.AuthenticationError as e:
